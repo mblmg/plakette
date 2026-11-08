@@ -45,3 +45,7 @@ domains and takes it online/offline in the project's **Website** tab; `studio si
 ## Project notes
 
 <!-- Claude and the user keep decisions, style rules and TODOs for this project here. -->
+
+- Plugin „Prüfstand“ in `src/pruefstand/` (German UI). Build zip: `cd src && zip -qr ../exports/pruefstand.zip pruefstand`.
+- Test against real WordPress: `tests/e2e.sh 8.3` (Playground; needs ≥2 workers for loopback).
+- Never name a DB column `undo` (MySQL reserved word – broke the log table once).
