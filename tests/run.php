@@ -1,6 +1,6 @@
 <?php
 /**
- * Test driver: /pst-tests/run.php?step=audit|fixall|undoall|state
+ * Test driver: /plk-tests/run.php?step=audit|fixall|undoall|state
  * Runs the plugin the same way the REST API does and prints a compact JSON summary.
  */
 require __DIR__ . '/../wp-load.php';
@@ -9,7 +9,7 @@ header( 'Content-Type: application/json; charset=utf-8' );
 $step = isset( $_GET['step'] ) ? $_GET['step'] : 'audit';
 $out  = array( 'step' => $step );
 
-function pst_summary( $report ) {
+function plk_summary( $report ) {
 	$rows = array();
 	foreach ( $report['checks'] as $c ) {
 		$rows[] = sprintf( '%-5s %-26s %-6s %s%s%s', $c['status'], $c['id'], $c['kind'], $c['detail'], empty( $c['items'] ) ? '' : ' [items:' . count( $c['items'] ) . ']', empty( $c['blocked'] ) ? '' : ' {blocked: ' . $c['blocked'] . '}' );
@@ -19,10 +19,10 @@ function pst_summary( $report ) {
 
 if ( 'audit' === $step ) {
 	$t   = microtime( true );
-	$out = array_merge( $out, pst_summary( Pruefstand_Auditor::run() ) );
+	$out = array_merge( $out, plk_summary( Plakette_Auditor::run() ) );
 	$out['seconds'] = round( microtime( true ) - $t, 1 );
 } elseif ( 'fixall' === $step ) {
-	$report = get_option( Pruefstand_Auditor::OPTION );
+	$report = get_option( Plakette_Auditor::OPTION );
 	foreach ( $report['checks'] as $c ) {
 		if ( ! in_array( $c['status'], array( 'fail', 'warn' ), true ) || ! empty( $c['blocked'] ) || in_array( $c['kind'], array( 'letter', 'none' ), true ) ) {
 			continue;
@@ -31,44 +31,58 @@ if ( 'audit' === $step ) {
 			continue;
 		}
 		$req = array( 'value' => isset( $c['input']['value'] ) ? $c['input']['value'] : '', 'items' => array() );
+		if ( 'form' === $c['kind'] && ! empty( $c['form']['fields'] ) ) {
+			// Fill forms like a user would: keep given values, complete empty ones from test data.
+			$test = array(
+				'name' => 'Konditorei Sonnenschein GmbH', 'legal_form' => 'gmbh', 'owner' => 'Erika Sonnenschein (Geschäftsführerin)',
+				'street' => 'Münsterplatz 7', 'zip' => '79098', 'city' => 'Freiburg im Breisgau', 'country' => 'DE',
+				'phone' => '+49 761 123456', 'email' => 'info@konditorei-sonnenschein.example', 'vat_id' => 'DE123456789',
+				'register' => 'Amtsgericht Freiburg, HRB 712345', 'opening_hours' => "Di-Fr 9-18\nSa 8-14",
+			);
+			$req['value'] = array();
+			foreach ( $c['form']['fields'] as $f ) {
+				$v = isset( $f['value'] ) ? $f['value'] : '';
+				$req['value'][ $f['key'] ] = ( '' === $v || null === $v ) && isset( $test[ $f['key'] ] ) ? $test[ $f['key'] ] : $v;
+			}
+		}
 		if ( 'seo_tagline' === $c['id'] ) {
 			$req['value'] = 'Handgemachte Torten aus Freiburg';
 		}
 		foreach ( isset( $c['items'] ) ? $c['items'] : array() as $it ) {
 			$req['items'][] = array( 'id' => $it['id'], 'value' => isset( $it['value'] ) ? $it['value'] : '' );
 		}
-		$check = Pruefstand_Auditor::get( $c['id'] );
+		$check = Plakette_Auditor::get( $c['id'] );
 		$undo  = array();
 		$run   = 'test' . substr( md5( $c['id'] . microtime() ), 0, 8 );
 		$msg   = $check->fix( $req, $undo );
 		if ( is_wp_error( $msg ) ) {
 			$out['fixes'][ $c['id'] ] = 'ERROR: ' . $msg->get_error_message();
-			Pruefstand_Log::apply_ops( $undo );
+			Plakette_Log::apply_ops( $undo );
 			continue;
 		}
-		if ( ! Pruefstand_Log::add( $run, $c['id'], $check->title . ': ' . $msg, $undo ) ) {
-			Pruefstand_Log::apply_ops( $undo );
+		if ( ! Plakette_Log::add( $run, $c['id'], $check->title . ': ' . $msg, $undo ) ) {
+			Plakette_Log::apply_ops( $undo );
 			$out['fixes'][ $c['id'] ] = 'LOG FAILED, rolled back';
 			continue;
 		}
 		$out['fixes'][ $c['id'] ] = $msg . ' (undo ops: ' . count( $undo ) . ')';
 	}
-	Pruefstand_Page_Cache::purge_all();
+	Plakette_Page_Cache::purge_all();
 } elseif ( 'undoall' === $step ) {
-	foreach ( Pruefstand_Log::runs( 200 ) as $run ) {
+	foreach ( Plakette_Log::runs( 200 ) as $run ) {
 		if ( ! $run['undone'] ) {
-			$r = Pruefstand_Log::undo_run( $run['run_id'] );
+			$r = Plakette_Log::undo_run( $run['run_id'] );
 			$out['undo'][ $run['check_id'] ] = is_wp_error( $r ) ? 'ERROR ' . $r->get_error_message() : 'ok';
 		}
 	}
 } elseif ( 'state' === $step ) {
-	$out['modules'] = get_option( 'pruefstand_modules' );
+	$out['modules'] = get_option( 'plakette_modules' );
 	foreach ( array( 'blog_public', 'permalink_structure', 'blogdescription', 'wp_attachment_pages_enabled', 'site_icon', 'home' ) as $o ) {
 		$out['options'][ $o ] = get_option( $o );
 	}
 	$out['wp_cache']   = defined( 'WP_CACHE' ) ? WP_CACHE : null;
 	$out['dropin']     = file_exists( WP_CONTENT_DIR . '/advanced-cache.php' );
-	$out['wpconfig']   = Pruefstand_Env::wpconfig_path() ? substr( file_get_contents( Pruefstand_Env::wpconfig_path() ), 0, 160 ) : '';
+	$out['wpconfig']   = Plakette_Env::wpconfig_path() ? substr( file_get_contents( Plakette_Env::wpconfig_path() ), 0, 160 ) : '';
 	$out['front']      = get_post( get_option( 'page_on_front' ) )->post_content;
 	$out['php']        = PHP_VERSION;
 }

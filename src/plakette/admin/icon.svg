@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Plakette">
+  <rect width="256" height="256" rx="48" fill="#13283f"/>
+  <circle cx="128" cy="128" r="96" fill="#f3f6f9"/>
+  <g fill="none" stroke-width="22" stroke-dasharray="64 11.4" transform="rotate(-90 128 128)">
+    <circle cx="128" cy="128" r="80" stroke="#2e9e6b"/>
+  </g>
+  <circle cx="128" cy="128" r="80" fill="none" stroke="#5b3e96" stroke-width="22" stroke-dasharray="64 438.7" transform="rotate(-90 128 128)"/>
+  <circle cx="128" cy="128" r="80" fill="none" stroke="#b42318" stroke-width="22" stroke-dasharray="64 438.7" transform="rotate(-0.5 128 128)"/>
+  <circle cx="128" cy="128" r="80" fill="none" stroke="#1f4e79" stroke-width="22" stroke-dasharray="64 438.7" transform="rotate(89.5 128 128)"/>
+  <circle cx="128" cy="128" r="62" fill="#fff"/>
+  <path d="M98 130l20 20 42-44" fill="none" stroke="#13283f" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

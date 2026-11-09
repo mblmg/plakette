@@ -44,8 +44,11 @@ domains and takes it online/offline in the project's **Website** tab; `studio si
 
 ## Project notes
 
-<!-- Claude and the user keep decisions, style rules and TODOs for this project here. -->
-
-- Plugin „Prüfstand“ in `src/pruefstand/` (German UI). Build zip: `cd src && zip -qr ../exports/pruefstand.zip pruefstand`.
-- Test against real WordPress: `tests/e2e.sh 8.3` (Playground; needs ≥2 workers for loopback).
+- Plugin „Plakette – Website-Hauptuntersuchung“ (früher Prüfstand) in `src/plakette/` (German UI, du-form; legal texts for visitors Sie-form).
+  Author „i-make.media | Magnus Brühl“. Areas: privacy (Datenschutz), security (Sicherheit incl. Recht/DSGVO/Cookie-Banner/BFSG), speed, seo.
+- Architecture + conventions: `docs/DEVELOPING.md`. PHP 7.4 compatible. Lint: `tools/lint.sh` (PHP-WASM). Build zip: `tools/build.sh` → `exports/plakette.zip`.
+- Distribution: GitHub repo `mblmg/plakette` (= this project), tag `vX.Y.Z` → `.github/workflows/release.yml` builds `plakette.zip` release asset;
+  `includes/class-updater.php` (Update URI header) auto-updates installs. Prepare a version: `tools/release.sh X.Y.Z [--push]`.
+- Test against real WordPress: `tests/e2e.sh 8.3` (Playground; needs ≥2 workers for loopback). Parallel runs: `PORT=94xx TAG=name tests/e2e.sh 8.3`.
+  Per-topic defects: `tests/seed-*.php`, `tests/mu/plk-*.php`.
 - Never name a DB column `undo` (MySQL reserved word – broke the log table once).

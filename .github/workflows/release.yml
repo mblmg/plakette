@@ -1,0 +1,54 @@
+# Baut bei jedem Tag „v1.2.3“ das Plugin-ZIP aus src/plakette und veröffentlicht es als GitHub-Release.
+# Installierte Plugins finden das Release über includes/class-updater.php und aktualisieren sich selbst.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag und Plugin-Version vergleichen
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          F=src/plakette/plakette.php
+          HEADER=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9][0-9A-Za-z.\-]*' $F)
+          CONST=$(grep -m1 -oP "define\(\s*'PLAKETTE_VERSION',\s*'\K[^']+" $F)
+          STABLE=$(grep -m1 -oP '^Stable tag:\s*\K\S+' src/plakette/readme.txt)
+          echo "Tag $TAG, Header $HEADER, Konstante $CONST, readme $STABLE"
+          [ "$TAG" = "$HEADER" ] && [ "$TAG" = "$CONST" ] && [ "$TAG" = "$STABLE" ] || { echo "::error::Tag, Plugin-Header, PLAKETTE_VERSION und Stable tag müssen übereinstimmen"; exit 1; }
+          grep -q "^## \[$TAG\]" CHANGELOG.md || { echo "::error::CHANGELOG.md hat keinen Abschnitt ## [$TAG]"; exit 1; }
+
+      - name: PHP-Syntax prüfen (7.4 und 8.3)
+        run: |
+          for v in 7.4 8.3; do
+            docker run --rm -v "$PWD/src/plakette:/app" -w /app php:$v-cli sh -c "find . -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null" && echo "PHP $v ok" || exit 1
+          done
+
+      - name: JavaScript-Syntax prüfen
+        run: for f in $(find src/plakette -name '*.js'); do node --check "$f"; done
+
+      - name: ZIP bauen
+        run: |
+          mkdir -p build
+          git archive --format=tar --prefix=plakette/ HEAD:src/plakette | tar -x -C build
+          cd build && zip -qr ../plakette.zip plakette
+          unzip -l ../plakette.zip | tail -3
+
+      - name: Release-Notizen aus CHANGELOG.md
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Siehe CHANGELOG.md" > notes.md
+          cat notes.md
+
+      - name: Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" plakette.zip --title "Plakette $GITHUB_REF_NAME" --notes-file notes.md

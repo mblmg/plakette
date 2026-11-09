@@ -1,13 +1,13 @@
 <?php
 /**
  * Test fixture: turns a fresh WordPress into a site with many typical SEO and speed problems.
- * Call once: /pst-tests/seed.php
+ * Call once: /plk-tests/seed.php
  */
 require __DIR__ . '/../wp-load.php';
 require_once ABSPATH . 'wp-admin/includes/image.php';
 wp_set_current_user( 1 );
 header( 'Content-Type: text/plain; charset=utf-8' );
-if ( get_option( 'pst_seeded' ) ) { echo "already seeded\n"; exit; }
+if ( get_option( 'plk_seeded' ) ) { echo "already seeded\n"; exit; }
 
 update_option( 'blog_public', '0' );
 update_option( 'permalink_structure', '' );
@@ -16,7 +16,7 @@ update_option( 'blogdescription', 'Just another WordPress site' );
 update_option( 'wp_attachment_pages_enabled', '1' );
 flush_rewrite_rules();
 
-function pst_upload( $name ) {
+function plk_upload( $name ) {
 	$up   = wp_upload_dir();
 	$dest = $up['path'] . '/' . $name;
 	copy( __DIR__ . '/fixtures/' . $name, $dest );
@@ -24,8 +24,8 @@ function pst_upload( $name ) {
 	wp_update_attachment_metadata( $id, wp_generate_attachment_metadata( $id, $dest ) );
 	return $id;
 }
-$hero  = pst_upload( 'IMG_20240611_183012.jpg' );
-$cake  = pst_upload( 'kuchen-mit-erdbeeren.jpg' );
+$hero  = plk_upload( 'IMG_20240611_183012.jpg' );
+$cake  = plk_upload( 'kuchen-mit-erdbeeren.jpg' );
 $hurl  = wp_get_attachment_image_url( $hero, 'large' );
 $curl  = wp_get_attachment_image_url( $cake, 'large' );
 
@@ -50,11 +50,15 @@ set_post_thumbnail( $recipe, $hero );
 
 // Expired transients and spam to clean up.
 for ( $i = 0; $i < 120; $i++ ) {
-	update_option( '_transient_timeout_pst_old_' . $i, time() - 3600, false );
-	update_option( '_transient_pst_old_' . $i, str_repeat( 'x', 100 ), false );
+	update_option( '_transient_timeout_plk_old_' . $i, time() - 3600, false );
+	update_option( '_transient_plk_old_' . $i, str_repeat( 'x', 100 ), false );
 }
 for ( $i = 0; $i < 5; $i++ ) {
 	wp_insert_comment( array( 'comment_post_ID' => $recipe, 'comment_content' => 'Buy cheap pills', 'comment_approved' => 'spam', 'comment_author' => 'spammer' ) );
 }
-update_option( 'pst_seeded', 1 );
+// Further defects per topic (tests/seed-*.php), e.g. tracking scripts, embeds, legal pages.
+foreach ( glob( __DIR__ . '/seed-*.php' ) as $plk_seed ) {
+	require $plk_seed;
+}
+update_option( 'plk_seeded', 1 );
 echo "seeded: front=$front recipe=$recipe hero=$hero cake=$cake\n";
