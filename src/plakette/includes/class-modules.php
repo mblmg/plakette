@@ -83,9 +83,7 @@ class Plakette_Modules {
 		if ( self::on( 'defer_js' ) ) {
 			add_action( 'wp_print_scripts', array( __CLASS__, 'defer_scripts' ), 1 );
 		}
-		if ( self::on( 'webp_uploads' ) ) {
-			add_filter( 'image_editor_output_format', array( __CLASS__, 'webp_output' ) );
-		}
+		// webp_uploads (old): now part of modern_images (includes/modules/images.php) – keeps originals, adds AVIF/WebP copies.
 		if ( self::get( 'lcp' ) ) {
 			add_action( 'wp_head', array( __CLASS__, 'lcp_preload' ), 1 );
 			add_filter( 'wp_content_img_tag', array( __CLASS__, 'lcp_img_tag' ), 20 );
@@ -418,12 +416,6 @@ class Plakette_Modules {
 				$wp_scripts->add_data( $handle, 'strategy', 'defer' );
 			}
 		}
-	}
-
-	public static function webp_output( $formats ) {
-		$formats['image/jpeg'] = 'image/webp';
-		$formats['image/png']  = 'image/webp';
-		return $formats;
 	}
 
 	private static function lcp_matches( $html_or_url ) {

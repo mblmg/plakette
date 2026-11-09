@@ -19,7 +19,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class Plakette_Legal_Pages {
 
-	const LEGAL = 'Recht & DSGVO';
+	const LEGAL = 'Recht';
 	const BFSG  = 'Barrierefreiheit (BFSG)';
 
 	/** Company fields for the forms of the legal checks. */
@@ -699,8 +699,8 @@ class Plakette_Check_Legal_Imprint extends Plakette_Check {
 
 class Plakette_Check_Legal_Privacy_Policy extends Plakette_Check {
 	public $id        = 'legal_privacy_policy';
-	public $area      = 'security';
-	public $group     = Plakette_Legal_Pages::LEGAL;
+	public $area      = 'privacy';
+	public $group     = 'DSGVO & Cookies';
 	public $weight    = 10;
 	public $title     = 'Datenschutzerklärung vorhanden und verlinkt';
 	public $problem   = 'Die Datenschutzerklärung fehlt';
@@ -791,8 +791,8 @@ class Plakette_Check_Legal_Privacy_Policy extends Plakette_Check {
 
 class Plakette_Check_Legal_Privacy_Coverage extends Plakette_Check {
 	public $id        = 'legal_privacy_coverage';
-	public $area      = 'security';
-	public $group     = Plakette_Legal_Pages::LEGAL;
+	public $area      = 'privacy';
+	public $group     = 'DSGVO & Cookies';
 	public $weight    = 6;
 	public $title     = 'Alle eingebundenen Dienste stehen in der Datenschutzerklärung';
 	public $problem   = 'Die Datenschutzerklärung erwähnt nicht alle Dienste';

@@ -92,7 +92,7 @@ class Plakette_Updater {
 			'url'          => 'https://github.com/' . PLAKETTE_REPO,
 			'package'      => $r['zip'],
 			'requires'     => '6.5',
-			'requires_php' => '7.4',
+			'requires_php' => '8.1',
 			'tested'       => get_bloginfo( 'version' ),
 			'icons'        => array( 'svg' => PLAKETTE_URL . 'admin/icon.svg' ),
 		);
@@ -111,7 +111,7 @@ class Plakette_Updater {
 			'author'        => '<a href="https://i-make.media">i-make.media | Magnus Brühl</a>',
 			'homepage'      => 'https://github.com/' . PLAKETTE_REPO,
 			'requires'      => '6.5',
-			'requires_php'  => '7.4',
+			'requires_php'  => '8.1',
 			'download_link' => $r ? $r['zip'] : '',
 			'last_updated'  => $r ? $r['date'] : '',
 			'sections'      => array(

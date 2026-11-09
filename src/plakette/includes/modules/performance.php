@@ -7,7 +7,7 @@
  *   lcp_auto   – LCP image: first big image in <main> (not in <header>) loads at once: no lazy-load, fetchpriority="high",
  *                preload in <head>. CSS class plk-lcp (or imm-lcp) picks another image. Together with the measured
  *                image of module 'lcp' (front page) that one wins.
- *   lcp_webp   – LCP image as WebP (EWWW naming bild.png.webp, only when smaller, all-or-nothing srcset).
+ *                The preload uses the best modern copy (AVIF/WebP, module modern_images – includes/modules/images.php).
  *   cdn_local  – scripts/styles from public CDNs are downloaded and served from uploads/plakette-vendor/.
  *   img_dims   – missing width/height of images are added from the file (SVG: viewBox).
  *   a11y_anim  – Breakdance entrance animations stay readable for screen readers.
@@ -92,7 +92,7 @@ class Plakette_Performance {
 	}
 
 	private static function any_html_module() {
-		foreach ( array( 'lcp', 'lcp_auto', 'lcp_webp', 'cdn_local', 'img_dims' ) as $k ) {
+		foreach ( array( 'lcp', 'lcp_auto', 'cdn_local', 'img_dims' ) as $k ) {
 			if ( self::active( $k ) ) {
 				return true;
 			}
@@ -121,7 +121,7 @@ class Plakette_Performance {
 
 	/* ================================================================== HTML pipeline */
 
-	/** Transform for Plakette_Html: LCP image, WebP, CDN files, image dimensions. */
+	/** Transform for Plakette_Html: LCP image, CDN files, image dimensions. */
 	public static function transform( $html ) {
 		$res = self::walk( $html, self::runtime_options() );
 		return $res['html'];
@@ -138,7 +138,6 @@ class Plakette_Performance {
 			'dry'      => false,
 			'auto'     => self::active( 'lcp_auto' ),
 			'measured' => $measured,
-			'webp'     => self::active( 'lcp_webp' ),
 			'cdn'      => self::active( 'cdn_local' ),
 			'dims'     => self::active( 'img_dims' ),
 		);
@@ -156,7 +155,6 @@ class Plakette_Performance {
 				'dry'      => true,
 				'auto'     => true,
 				'measured' => (string) $measured,
-				'webp'     => false,
 				'cdn'      => false,
 				'dims'     => false,
 			)
@@ -233,7 +231,7 @@ class Plakette_Performance {
 						'lazy_class'    => $p->has_class( 'lazyload' ) || null !== $p->get_attribute( 'data-src' ),
 					);
 					if ( ! $o['dry'] ) {
-						$preload = self::make_lcp( $p, $o['webp'] );
+						$preload = self::make_lcp( $p );
 					}
 				}
 			}
@@ -314,7 +312,7 @@ class Plakette_Performance {
 	}
 
 	/** Makes the LCP image load at once. @return array|null [ tag, href ] of the preload */
-	private static function make_lcp( WP_HTML_Tag_Processor $p, $webp ) {
+	private static function make_lcp( WP_HTML_Tag_Processor $p ) {
 		$src  = (string) $p->get_attribute( 'src' );
 		$dsrc = $p->get_attribute( 'data-src' );
 		if ( ! is_string( $dsrc ) || '' === $dsrc ) {
@@ -353,22 +351,20 @@ class Plakette_Performance {
 			$sizes = '' !== $sizes ? $sizes : '100vw';
 			$p->set_attribute( 'sizes', $sizes );
 		}
-		if ( $webp ) {
-			$w_src    = self::webp_url( $src );
-			$w_srcset = '' !== $srcset ? self::webp_srcset( $srcset ) : '';
-			if ( $w_src && ( '' === $srcset || $w_srcset ) ) {
-				$src = $w_src;
-				$p->set_attribute( 'src', $src );
-				if ( $w_srcset ) {
-					$srcset = $w_srcset;
-					$p->set_attribute( 'srcset', $srcset );
-				}
-			}
-		}
 		if ( '' === $src || 0 === strpos( $src, 'data:' ) ) {
 			return null;
 		}
-		$tag = '<link rel="preload" as="image" href="' . esc_url( $src ) . '" fetchpriority="high"';
+		// The <img> keeps its JPEG/PNG (fallback); modern_images wraps it in <picture> with AVIF/WebP sources.
+		// Preload exactly what a modern browser will pick – with type, so browsers without that format skip the
+		// preload and simply load the <img> (one download, never two).
+		$type    = '';
+		$variant = class_exists( 'Plakette_Modern_Images' ) ? Plakette_Modern_Images::best_variant( $src, $srcset ) : null;
+		if ( $variant ) {
+			$type   = ' type="' . $variant['type'] . '"';
+			$src    = $variant['href'];
+			$srcset = '' !== $srcset ? $variant['srcset'] : '';
+		}
+		$tag = '<link rel="preload" as="image" href="' . esc_url( $src ) . '"' . $type . ' fetchpriority="high"';
 		if ( '' !== $srcset ) {
 			$tag .= ' imagesrcset="' . esc_attr( $srcset ) . '" imagesizes="' . esc_attr( $sizes ) . '"';
 		}
@@ -378,7 +374,7 @@ class Plakette_Performance {
 		);
 	}
 
-	/* ================================================================== images: paths, WebP, dimensions */
+	/* ================================================================== images: paths, dimensions */
 
 	/** URL of a file in wp-content (uploads, themes, plugins) → path, else null. */
 	public static function local_path( $url ) {
@@ -410,61 +406,7 @@ class Plakette_Performance {
 		return null;
 	}
 
-	/** WebP version (EWWW naming: bild.jpg.webp). Created once when missing. Only used when smaller. */
-	public static function webp_url( $url ) {
-		$clean = (string) strtok( (string) $url, '?#' );
-		if ( '.webp' === strtolower( substr( $clean, -5 ) ) ) {
-			return $url;
-		}
-		$path = self::local_path( $url );
-		if ( ! $path || ! preg_match( '#\.(jpe?g|png)$#i', $path ) || ! is_file( $path ) ) {
-			return null;
-		}
-		$webp = $path . '.webp';
-		if ( ! is_file( $webp ) && ! self::make_webp( $path, $webp ) ) {
-			return null;
-		}
-		return filesize( $webp ) < filesize( $path ) ? $clean . '.webp' : null;
-	}
-
-	/** All candidates as WebP – or '' (only switch completely, never half). */
-	public static function webp_srcset( $srcset ) {
-		$out = array();
-		foreach ( array_filter( array_map( 'trim', explode( ',', $srcset ) ) ) as $cand ) {
-			$parts = preg_split( '#\s+#', $cand, 2 );
-			$w     = self::webp_url( $parts[0] );
-			if ( ! $w ) {
-				return '';
-			}
-			$out[] = $w . ( isset( $parts[1] ) ? ' ' . $parts[1] : '' );
-		}
-		return implode( ', ', $out );
-	}
-
-	private static function make_webp( $path, $target ) {
-		$lock = 'plakette_webp_' . md5( $path );
-		if ( get_transient( $lock ) ) {
-			return false;
-		}
-		set_transient( $lock, 1, HOUR_IN_SECONDS );
-		$editor = wp_get_image_editor( $path );
-		if ( is_wp_error( $editor ) || ! $editor->supports_mime_type( 'image/webp' ) ) {
-			return false;
-		}
-		$editor->set_quality( (int) apply_filters( 'plakette_webp_quality', 80 ) );
-		$saved = $editor->save( $target, 'image/webp' );
-		if ( is_wp_error( $saved ) || ! is_file( $target ) ) {
-			return false;
-		}
-		delete_transient( $lock );
-		// Remember what Plakette created, so the undo can remove exactly these files.
-		$list   = (array) get_option( self::WEBP_OPTION, array() );
-		$list[] = $target;
-		update_option( self::WEBP_OPTION, array_values( array_unique( $list ) ), false );
-		return true;
-	}
-
-	/** Undo: removes the WebP files Plakette created. */
+	/** Undo of the former lcp_webp module (old protocol entries): removes the WebP files it created. */
 	public static function clear_webp() {
 		foreach ( (array) get_option( self::WEBP_OPTION, array() ) as $file ) {
 			if ( is_string( $file ) && '.webp' === substr( $file, -5 ) && is_file( $file ) && 0 === strpos( wp_normalize_path( $file ), wp_normalize_path( WP_CONTENT_DIR ) ) ) {
@@ -926,9 +868,15 @@ class Plakette_Performance {
 
 	public static function settings_section( $sections ) {
 		$sections['performance'] = array(
-			'title'  => __( 'Lokale Kopien (Schriften und CDN-Dateien)', 'plakette' ),
-			'desc'   => __( 'Was Plakette von fremden Servern auf deine Website geholt hat. Eingeschaltet werden diese Funktionen über die Prüfpunkte; abschalten kannst du sie im Protokoll mit „Rückgängig“. Ungenutzte Kopien räumt Plakette nach 30 Tagen automatisch weg.', 'plakette' ),
+			'title'  => __( 'Bilder und lokale Kopien', 'plakette' ),
+			'desc'   => __( 'Welche Bildformate dein Server erzeugen kann und was Plakette von fremden Servern auf deine Website geholt hat. Eingeschaltet werden diese Funktionen über die Prüfpunkte; abschalten kannst du sie im Protokoll mit „Rückgängig“. Ungenutzte Kopien räumt Plakette nach 30 Tagen automatisch weg.', 'plakette' ),
 			'fields' => array(
+				array(
+					'key'   => 'images_info',
+					'label' => __( 'Moderne Bildformate (AVIF/WebP)', 'plakette' ),
+					'type'  => 'info',
+					'html'  => ( class_exists( 'Plakette_Modern_Images' ) && Plakette_Modern_Images::active() ? '' : '<p><em>' . esc_html__( 'Ausgeschaltet.', 'plakette' ) . '</em></p>' ) . ( class_exists( 'Plakette_Modern_Images' ) ? Plakette_Modern_Images::info_html() : '' ),
+				),
 				array(
 					'key'   => 'fonts_info',
 					'label' => __( 'Google-Schriften lokal', 'plakette' ),

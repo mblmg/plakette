@@ -1,7 +1,8 @@
 <?php
 /**
  * Privacy checks: third-party servers, embedded media, cookie consent, avatars and comments.
- * The consent check belongs to the area "security" (group „Recht & DSGVO“).
+ * The consent check (privacy_consent) is in the group „DSGVO & Cookies“: it decides with real evidence whether a
+ * cookie banner is needed and how to get rid of it.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -301,132 +302,623 @@ class Plakette_Check_Privacy_Embeds extends Plakette_Privacy_Check {
 
 /* ------------------------------------------------------------------------------------------ consent */
 
-class Plakette_Check_Legal_Consent extends Plakette_Privacy_Check {
-	public $id        = 'legal_consent';
-	public $area      = 'security';
-	public $group     = 'Recht & DSGVO';
-	public $weight    = 9;
-	public $title     = 'Fremde Dienste starten erst nach Einwilligung';
-	public $problem   = 'Tracking und fremde Inhalte laden ohne Einwilligung';
-	public $explain   = 'Statistik-, Werbe- und Video-Dienste dürfen erst laden, wenn Besucher ausdrücklich zugestimmt haben (§ 25 TDDDG, DSGVO). Sonst drohen Abmahnungen und Bußgelder. Ein Cookie-Banner fragt nach und hält die Dienste bis dahin zurück. Gut zu wissen: Ohne solche Dienste brauchst du gar keinen Banner.';
-	public $fix_label = 'Cookie-Banner einschalten';
-	public $fix_does  = 'Schaltet den Cookie-Banner von Plakette ein: „Alle akzeptieren“, „Nur notwendige“ und „Einstellungen“ gleichwertig, mit Links zu Datenschutzerklärung und Impressum. Skripte von Statistik-, Marketing- und Mediendiensten werden zurückgehalten, bis Besucher zustimmen; eingebettete Videos und Karten bekommen einen Platzhalter. Ohne Verbindung zu fremden Servern. Texte änderst du unter Einstellungen › Cookie-Banner.';
-	public $risk      = 'review';
+/**
+ * Evidence for the consent question, collected like a data-protection auditor does it:
+ *  1. what a real browser stores and contacts on a first visit without any click (browser probe in the admin,
+ *     admin.js › privacyProbe(), stored in the option plakette_privacy_probe),
+ *  2. Set-Cookie headers the server sends to a first-time visitor,
+ *  3. services found in the HTML of the home page and sample pages (Plakette_Services::detect).
+ */
+class Plakette_Privacy_Evidence {
 
-	/** Cookies that are technically necessary (no consent needed). */
-	private static function essential_cookie( $name ) {
-		return (bool) preg_match( '/^(wordpress_test_cookie|PHPSESSID|wp-settings|wp_woocommerce_session_|woocommerce_|wp_lang$|plakette_consent$|wordpress_logged_in|wordpress_sec|comment_author)/i', $name );
+	const PROBE = 'plakette_privacy_probe';
+
+	/** Services the banner categories cover; others (fonts, CDN, reCAPTCHA …) a banner cannot hold back. */
+	const BANNER_CATS = array( 'statistics', 'marketing', 'media' );
+
+	public static function probe() {
+		$p = get_option( self::PROBE );
+		return is_array( $p ) && ! empty( $p['time'] ) ? $p : null;
 	}
 
-	/** Services our banner is responsible for that load unblocked: id => hit. */
-	private static function unblocked( array $found ) {
-		$out = array();
-		foreach ( $found as $id => $hit ) {
-			if ( ! $hit['blocked'] && Plakette_Consent::handles( $id ) ) {
-				$out[ $id ] = $hit;
+	/** Was the browser probe taken with the current set-up (modules, plugins, theme)? */
+	public static function probe_fresh( $p ) {
+		return $p && isset( $p['signature'] ) && Plakette_Consent::signature() === $p['signature'] && time() - (int) $p['time'] < 30 * DAY_IN_SECONDS;
+	}
+
+	/** Does this service need consent at all (and is not essential for a contract, e.g. payment)? */
+	public static function relevant( $id ) {
+		$s = Plakette_Services::get( $id );
+		return $s && ! empty( $s['consent'] ) && 'necessary' !== $s['category'];
+	}
+
+	/**
+	 * @return array {
+	 *   probe: array|null, fresh: bool, tool: string,
+	 *   services: id => [ state: loads|held|click, where: string[], src: string[] ],
+	 *   entries: [ type: cookie|local|session|idb, name, src: server|browser, kb: array ] (each name once),
+	 *   hosts: unknown third-party host => source,
+	 * }
+	 */
+	public static function collect( Plakette_Context $ctx ) {
+		$probe = self::probe();
+		$fresh = self::probe_fresh( $probe );
+		$e     = array(
+			'probe'    => $probe,
+			'fresh'    => $fresh,
+			'tool'     => Plakette_Modules::on( 'consent' ) ? 'Plakette' : Plakette_Services::consent_tool( $ctx->html() ),
+			'services' => array(),
+			'entries'  => array(),
+			'hosts'    => array(),
+		);
+		$add = function ( $id, $loads, $where, $src ) use ( &$e ) {
+			if ( ! self::relevant( $id ) ) {
+				return;
+			}
+			if ( ! isset( $e['services'][ $id ] ) ) {
+				$e['services'][ $id ] = array( 'state' => 'held', 'where' => array(), 'src' => array() );
+			}
+			if ( $loads ) {
+				$e['services'][ $id ]['state'] = 'loads';
+			}
+			$e['services'][ $id ]['where'] = array_values( array_unique( array_merge( $e['services'][ $id ]['where'], (array) $where ) ) );
+			$e['services'][ $id ]['src']   = array_values( array_unique( array_merge( $e['services'][ $id ]['src'], array( $src ) ) ) );
+		};
+
+		// 3. HTML.
+		foreach ( Plakette_Privacy_Check::detect_pages( $ctx ) as $id => $hit ) {
+			$add( $id, ! $hit['blocked'], $hit['where'], 'html' );
+		}
+		$own   = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$hosts = (array) $ctx->facts()['hosts'];
+		foreach ( $ctx->samples() as $facts ) {
+			$hosts += isset( $facts['hosts'] ) ? (array) $facts['hosts'] : array();
+		}
+		foreach ( array_keys( $hosts ) as $host ) {
+			if ( '' === Plakette_Services::for_url( $host ) && $host !== $own ) {
+				$e['hosts'][ $host ] = 'html';
 			}
 		}
-		return $out;
+
+		// 2. Server cookies.
+		$names = array();
+		foreach ( $ctx->cookies() as $name ) {
+			$names[ 'cookie|' . $name ] = array( 'cookie', $name, 'server' );
+		}
+
+		// 1. Browser.
+		if ( $fresh ) {
+			foreach ( (array) $probe['cookies'] as $c ) {
+				$names[ 'cookie|' . $c['name'] ] = array( 'cookie', $c['name'], 'browser' );
+			}
+			foreach ( (array) $probe['storage'] as $s ) {
+				$names[ $s['area'] . '|' . $s['key'] ] = array( $s['area'], $s['key'], 'browser' );
+			}
+			foreach ( (array) $probe['hosts'] as $h ) {
+				$id = Plakette_Services::for_url( $h['host'] );
+				if ( $id ) {
+					$add( $id, true, $h['host'], 'browser' );
+				} elseif ( strtolower( $h['host'] ) !== $own ) {
+					$e['hosts'][ $h['host'] ] = 'browser';
+				}
+			}
+		}
+		foreach ( $names as $n ) {
+			$kb             = Plakette_Services::classify_storage( $n[1] );
+			$e['entries'][] = array( 'type' => $n[0], 'name' => $n[1], 'src' => $n[2], 'kb' => $kb );
+			// A cookie of a known service proves that the service runs without consent.
+			if ( 'no' === $kb['necessary'] && '' !== $kb['service'] ) {
+				$add( $kb['service'], true, ( 'cookie' === $n[0] ? 'Cookie ' : 'Speicher ' ) . $n[1], 'cookie' );
+			}
+		}
+		// Two-click placeholders are consent per embed – they do not need a banner.
+		foreach ( $e['services'] as $id => $s ) {
+			$cat = Plakette_Services::get( $id )['category'];
+			if ( 'held' === $s['state'] && 'media' === $cat && Plakette_Modules::on( 'embeds' ) ) {
+				$e['services'][ $id ]['state'] = 'click';
+			}
+		}
+		return $e;
+	}
+
+	/**
+	 * The measure that makes a service unnecessary without a banner.
+	 *
+	 * @return array [ key, label, sub, checked, avoidable, check ] or [ 'advice' => text, 'avoidable' => false ]
+	 */
+	public static function measure( $id ) {
+		$s    = Plakette_Services::get( $id );
+		$name = $s ? $s['name'] : $id;
+		switch ( $id ) {
+			case 'google-fonts':
+				return array( 'key' => 'm:fonts', 'label' => __( 'Schriften lokal speichern (statt Google Fonts)', 'plakette' ), 'checked' => true, 'avoidable' => true, 'check' => 'privacy_google_fonts' );
+			case 'public-cdn':
+			case 'font-awesome':
+				return array( 'key' => 'm:cdn', 'label' => __( 'Dateien von öffentlichen CDNs lokal ausliefern', 'plakette' ), 'checked' => true, 'avoidable' => true, 'check' => 'privacy_cdn' );
+			case 'gravatar':
+				return array( 'key' => 'm:avatars', 'label' => __( 'Profilbilder lokal erzeugen (statt Gravatar)', 'plakette' ), 'checked' => true, 'avoidable' => true, 'check' => 'privacy_gravatar' );
+			case 'recaptcha':
+				return array( 'advice' => __( 'Google reCAPTCHA: Spamschutz ohne Google nutzen – Honigtopf/Zeitfalle (Contact Form 7: Plugin „Honeypot for Contact Form 7“, WPForms: eingebauter Spamschutz) oder Friendly Captcha (EU-gehostet). Danach reCAPTCHA im Formular-Plugin abschalten.', 'plakette' ), 'avoidable' => false );
+			case 'adobe-fonts':
+				return array( 'advice' => __( 'Adobe Fonts: Schriften herunterladen und lokal einbinden (bei Adobe nur mit passender Lizenz) oder eine freie Alternative wählen.', 'plakette' ), 'avoidable' => false );
+			case 'mailchimp':
+				return array( 'advice' => __( 'Mailchimp: das Anmeldeformular als einfaches Formular auf deiner Seite einbauen (ohne Mailchimp-Skript) oder nur als Link zur Anmeldeseite.', 'plakette' ), 'avoidable' => false );
+		}
+		if ( ! $s ) {
+			return array( 'advice' => '', 'avoidable' => false );
+		}
+		if ( 'media' === $s['category'] && in_array( $id, array( 'youtube', 'vimeo', 'google-maps', 'openstreetmap', 'spotify', 'soundcloud', 'calendly' ), true ) ) {
+			$sub = '';
+			if ( 'google-maps' === $id ) {
+				$sub = __( 'Alternative ohne Klick: ein Bild der Karte mit Link „Route in Google Maps öffnen“.', 'plakette' );
+			} elseif ( 'calendly' === $id ) {
+				$sub = __( 'Alternative: statt der Einbettung ein Link „Termin buchen“ zu Calendly.', 'plakette' );
+			}
+			return array( 'key' => 'm:embeds', 'label' => __( 'Videos, Karten und Player erst nach Klick laden (Zwei-Klick-Lösung)', 'plakette' ), 'sub' => $sub, 'checked' => true, 'avoidable' => true, 'check' => 'privacy_embeds' );
+		}
+		$plugin = Plakette_Services::plugin_for( $id );
+		$how    = $plugin
+			/* translators: %s: plugin name */
+			? sprintf( __( 'Kommt vom Plugin „%s“ – Plakette deaktiviert es (rückgängig machbar).', 'plakette' ), $plugin[1] )
+			: __( 'Plakette entfernt die Skripte beim Ausliefern der Seiten (rückgängig machbar).', 'plakette' );
+		if ( 'statistics' === $s['category'] ) {
+			return array(
+				'key'       => 'remove:' . $id,
+				/* translators: %s: service */
+				'label'     => sprintf( __( '%s entfernen – Besucherzahlen misst dann die Plakette-Statistik (ohne Cookies)', 'plakette' ), $name ),
+				'sub'       => $how,
+				'checked'   => true,
+				'avoidable' => true,
+			);
+		}
+		// Marketing pixels, social media posts: only with a banner – or not at all.
+		return array(
+			'key'       => 'remove:' . $id,
+			/* translators: %s: service */
+			'label'     => sprintf( __( '%s entfernen (darauf verzichten)', 'plakette' ), $name ),
+			'sub'       => $how . ' ' . __( 'Nur mit Cookie-Banner erlaubt – brauchst du es wirklich?', 'plakette' ),
+			'checked'   => false,
+			'avoidable' => false,
+		);
+	}
+
+	/** Plugins that start a PHP session (session_start) – to name the culprit of PHPSESSID. */
+	public static function session_plugins() {
+		$cached = get_transient( 'plakette_session_plugins' );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$all   = get_plugins();
+		$found = array();
+		$files = 0;
+		foreach ( (array) get_option( 'active_plugins', array() ) as $base ) {
+			$dir = WP_PLUGIN_DIR . '/' . dirname( $base );
+			if ( '.' === dirname( $base ) || ! is_dir( $dir ) || 0 === strpos( $base, 'plakette/' ) ) {
+				continue;
+			}
+			$it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ) );
+			foreach ( $it as $file ) {
+				if ( ++$files > 4000 ) {
+					break 2;
+				}
+				if ( 'php' !== $file->getExtension() || $file->getSize() > 1048576 || false !== strpos( $file->getPathname(), '/vendor/' ) ) {
+					continue;
+				}
+				$code = (string) file_get_contents( $file->getPathname() ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+				if ( preg_match( '/\bsession_start\s*\(/', $code ) ) {
+					$found[] = isset( $all[ $base ]['Name'] ) ? $all[ $base ]['Name'] : dirname( $base );
+					continue 2;
+				}
+			}
+		}
+		set_transient( 'plakette_session_plugins', $found, HOUR_IN_SECONDS );
+		return $found;
+	}
+
+	/** Known consent plugins: dir prefix => name. */
+	public static function consent_plugin_dirs() {
+		return array(
+			'borlabs-cookie'              => 'Borlabs Cookie',
+			'complianz-gdpr'              => 'Complianz',
+			'complianz-gdpr-premium'      => 'Complianz',
+			'real-cookie-banner'          => 'Real Cookie Banner',
+			'real-cookie-banner-pro'      => 'Real Cookie Banner',
+			'cookie-law-info'             => 'CookieYes',
+			'cookiebot'                   => 'Cookiebot',
+			'gdpr-cookie-compliance'      => 'GDPR Cookie Compliance',
+			'cookie-notice'               => 'Cookie Notice',
+			'iubenda-cookie-law-solution' => 'iubenda',
+			'usercentrics-cmp'            => 'Usercentrics',
+			'plk-test-consent-plugin'     => 'Test-Cookie-Plugin',
+		);
+	}
+
+	/** Active consent plugin: [ basename, name ] or null. */
+	public static function consent_plugin() {
+		foreach ( (array) get_option( 'active_plugins', array() ) as $base ) {
+			$dir = dirname( $base );
+			if ( isset( self::consent_plugin_dirs()[ $dir ] ) ) {
+				return array( $base, self::consent_plugin_dirs()[ $dir ] );
+			}
+		}
+		return null;
+	}
+
+	/** Lines with the raw evidence for the report. */
+	public static function notes( array $e ) {
+		$notes = array();
+		$p     = $e['probe'];
+		$label = array(
+			'cookie'  => __( 'Cookie', 'plakette' ),
+			'local'   => 'localStorage',
+			'session' => 'sessionStorage',
+			'idb'     => 'IndexedDB',
+		);
+		$need  = array(
+			'yes'     => __( 'technisch notwendig', 'plakette' ),
+			'no'      => __( 'nicht notwendig – braucht Einwilligung', 'plakette' ),
+			'depends' => __( 'prüfen', 'plakette' ),
+		);
+		if ( $e['fresh'] ) {
+			$cookies = 0;
+			$storage = 0;
+			foreach ( $e['entries'] as $en ) {
+				if ( 'browser' === $en['src'] ) {
+					'cookie' === $en['type'] ? ++$cookies : ++$storage;
+				}
+			}
+			$third = count( (array) $p['hosts'] );
+			$notes[] = sprintf(
+				/* translators: 1: date, 2: pages, 3: cookies, 4: storage entries, 5: hosts */
+				__( 'Browser-Messung vom %1$s (%2$d Seiten, erster Besuch, ohne Klick): %3$d neue Cookies, %4$d Speicher-Einträge, %5$d fremde Server.', 'plakette' ),
+				wp_date( 'd.m.Y H:i', (int) $p['time'] ),
+				count( (array) $p['pages'] ),
+				$cookies,
+				$storage,
+				$third
+			);
+		} elseif ( $p ) {
+			$notes[] = __( 'Die letzte Browser-Messung ist veraltet – seitdem hat sich etwas geändert. Starte oben „Datenschutz-Messung“, damit Plakette sieht, was ein Browser wirklich speichert.', 'plakette' );
+		} else {
+			$notes[] = __( 'Noch keine Browser-Messung: Das Ergebnis stammt aus dem Seitenquelltext und den Cookies des Servers. Für Gewissheit starte oben „Datenschutz-Messung“.', 'plakette' );
+		}
+		foreach ( $e['entries'] as $en ) {
+			$kb      = $en['kb'];
+			$line    = $label[ $en['type'] ] . ' „' . $en['name'] . '“ – ' . $kb['label'] . ' – ' . $need[ $kb['necessary'] ];
+			$line   .= 'server' === $en['src'] ? ' ' . __( '(vom Server gesetzt)', 'plakette' ) : '';
+			if ( 'yes' !== $kb['necessary'] ) {
+				$line .= '. ' . $kb['reason'];
+				if ( 'PHPSESSID' === $en['name'] ) {
+					$who   = self::session_plugins();
+					$line .= ' ' . ( $who
+						/* translators: %s: plugin names */
+						? sprintf( __( 'Startet eine Sitzung: %s.', 'plakette' ), implode( ', ', $who ) )
+						: __( 'Kein aktives Plugin ruft session_start() auf – vermutlich das Theme oder der Server.', 'plakette' ) );
+				}
+				if ( '' !== $kb['measure'] ) {
+					$line .= ' → ' . $kb['measure'];
+				}
+			}
+			$notes[] = $line;
+		}
+		$state = array(
+			'loads' => __( 'lädt ohne Einwilligung', 'plakette' ),
+			'held'  => __( 'wartet auf Einwilligung (Cookie-Banner)', 'plakette' ),
+			'click' => __( 'lädt erst nach Klick (Zwei-Klick-Lösung)', 'plakette' ),
+		);
+		foreach ( $e['services'] as $id => $s ) {
+			$notes[] = __( 'Dienst', 'plakette' ) . ' ' . Plakette_Services::get( $id )['name'] . ' (' . implode( ', ', array_slice( $s['where'], 0, 3 ) ) . ') – ' . $state[ $s['state'] ];
+		}
+		foreach ( $e['hosts'] as $host => $src ) {
+			$notes[] = __( 'Fremder Server', 'plakette' ) . ' ' . $host . ' – ' . __( 'unbekannt – prüfen, welches Plugin ihn einbindet und ob er nötig ist', 'plakette' );
+		}
+		return $notes;
+	}
+}
+
+class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
+	public $id        = 'privacy_consent';
+	public $group     = 'DSGVO & Cookies';
+	public $weight    = 9;
+	public $title     = 'Kein Cookie-Banner nötig';
+	public $problem   = 'Ein Cookie-Banner ist nötig – das lässt sich vermeiden';
+	public $explain   = 'Ein Cookie-Banner ist nur nötig, wenn deine Seite beim ersten Besuch etwas im Browser speichert, das nicht technisch notwendig ist (§ 25 TDDDG), oder Daten an fremde Dienste schickt (DSGVO). Fehlt dann die Einwilligung, drohen Abmahnungen. Besser als jeder Banner: Diese Dienste ersetzen – dann brauchst du gar keinen. Banner nerven Besucher und kosten Anfragen und Umsatz.';
+	public $fix_label = 'Ausgewählte Maßnahmen umsetzen';
+	public $fix_does  = 'Setzt die ausgewählten Maßnahmen um. Sind alle erledigt, braucht deine Website keinen Cookie-Banner mehr: nichts wird ohne Klick gespeichert, keine fremden Dienste laden ungefragt. Was du behalten willst und eine Einwilligung braucht, hält der Plakette-Cookie-Banner zurück.';
+	public $risk      = 'review';
+	public $kind      = 'items';
+
+	/** Splits the evidence into what still needs consent. */
+	private static function analyse( array $e ) {
+		$a = array( 'loads' => array(), 'held' => array(), 'review' => array(), 'avoidable' => array(), 'keep' => array(), 'advice' => array() );
+		foreach ( $e['services'] as $id => $s ) {
+			if ( 'click' === $s['state'] ) {
+				continue;
+			}
+			$a[ $s['state'] ][] = $id;
+			$m                  = Plakette_Privacy_Evidence::measure( $id );
+			if ( ! empty( $m['avoidable'] ) ) {
+				$a['avoidable'][] = $id;
+			} else {
+				$a['keep'][] = $id;
+				if ( ! empty( $m['advice'] ) ) {
+					$a['advice'][] = $m['advice'];
+				}
+			}
+		}
+		foreach ( $e['entries'] as $en ) {
+			if ( 'depends' === $en['kb']['necessary'] || ( 'no' === $en['kb']['necessary'] && '' === $en['kb']['service'] ) ) {
+				$a['review'][] = $en['name'];
+			}
+		}
+		foreach ( array_keys( $e['hosts'] ) as $host ) {
+			$a['review'][] = $host;
+		}
+		return $a;
+	}
+
+	private static function names( array $ids ) {
+		return implode( ', ', array_map( array( 'Plakette_Privacy_Check', 'service_name' ), array_values( array_unique( $ids ) ) ) );
+	}
+
+	/** Items (measures) for a list of services. */
+	private static function items( array $ids, $with_banner, $banner_checked ) {
+		$items = array();
+		foreach ( array_unique( $ids ) as $id ) {
+			$m = Plakette_Privacy_Evidence::measure( $id );
+			if ( empty( $m['key'] ) ) {
+				continue;
+			}
+			if ( isset( $items[ $m['key'] ] ) ) {
+				$items[ $m['key'] ]['sub'] = trim( $items[ $m['key'] ]['sub'] . ' ' . self::service_name( $id ) );
+				continue;
+			}
+			$items[ $m['key'] ] = array(
+				'id'      => $m['key'],
+				'label'   => $m['label'],
+				'sub'     => trim( ( isset( $m['sub'] ) ? $m['sub'] : '' ) ),
+				'checked' => ! empty( $m['checked'] ),
+			);
+		}
+		if ( $with_banner ) {
+			$items['banner'] = array(
+				'id'      => 'banner',
+				'label'   => __( 'Plakette-Cookie-Banner einschalten', 'plakette' ),
+				'sub'     => __( 'Für alles, was du behältst und eine Einwilligung braucht. Wird nur eingeschaltet, wenn nach den anderen Maßnahmen noch etwas übrig ist.', 'plakette' ),
+				'checked' => $banner_checked,
+			);
+		}
+		return array_values( $items );
 	}
 
 	public function run( Plakette_Context $ctx ) {
 		if ( ! $ctx->home_ok() ) {
 			return $this->no_html( $ctx );
 		}
-		$found     = self::detect_all( $ctx );
-		$unblocked = self::unblocked( $found );
-		$posts     = Plakette_Modules::on( 'embeds' ) ? array() : self::media_in_posts( $ctx );
-		$tool      = Plakette_Services::consent_tool( $ctx->html() );
-		$names     = array_map( array( __CLASS__, 'service_name' ), array_keys( $unblocked ) );
-		foreach ( $posts as $ids ) {
-			foreach ( $ids as $id ) {
-				$names[] = self::service_name( $id );
-			}
+		$e     = Plakette_Privacy_Evidence::collect( $ctx );
+		$a     = self::analyse( $e );
+		$notes = Plakette_Privacy_Evidence::notes( $e );
+		$tool  = $e['tool'];
+		$need  = array_merge( $a['loads'], $a['held'] );
+		$keep  = array_values( array_intersect( $a['keep'], $need ) );
+		$keep_banner = array_values(
+			array_filter(
+				$keep,
+				function ( $id ) {
+					return in_array( Plakette_Services::get( $id )['category'], Plakette_Privacy_Evidence::BANNER_CATS, true );
+				}
+			)
+		);
+		$without = $keep ? ' ' . sprintf(
+			/* translators: %s: services */
+			__( 'Ohne Banner geht es nur, wenn du auf %s verzichtest.', 'plakette' ),
+			self::names( $keep )
+		) : '';
+		foreach ( $a['advice'] as $advice ) {
+			$notes[] = __( 'So geht es ohne Banner:', 'plakette' ) . ' ' . $advice;
 		}
-		$names = array_values( array_unique( $names ) );
 
-		if ( $tool && 'Plakette' !== $tool ) {
-			$extra = array();
-			if ( $names ) {
-				$extra['notes'] = array( sprintf( __( 'Prüfe in %1$s, ob diese Dienste erfasst sind: %2$s.', 'plakette' ), $tool, implode( ', ', $names ) ) );
-			}
-			return $this->pass( sprintf( __( 'Cookie-Banner: %s ist aktiv und kümmert sich um die Einwilligung.', 'plakette' ), $tool ), $extra );
-		}
-
-		if ( Plakette_Modules::on( 'consent' ) ) {
-			if ( $unblocked ) {
-				$notes = array();
-				foreach ( $unblocked as $id => $hit ) {
-					$notes[] = self::service_name( $id ) . ' – ' . implode( ', ', array_map( array( __CLASS__, 'page_title' ), array_unique( $hit['pages'] ) ) ) . ' (' . implode( ', ', $hit['where'] ) . ')';
+		// Nothing needs consent.
+		if ( ! $need ) {
+			if ( '' !== $tool ) {
+				$plugin = Plakette_Privacy_Evidence::consent_plugin();
+				$label  = 'Plakette' === $tool ? __( 'Plakette-Cookie-Banner ausschalten', 'plakette' ) : sprintf( __( '%s deaktivieren', 'plakette' ), $plugin ? $plugin[1] : $tool );
+				$extra  = array(
+					'problem'   => __( 'Dein Cookie-Banner ist überflüssig', 'plakette' ),
+					'notes'     => $notes,
+					'kind'      => 'auto',
+					'fix_label' => $label,
+					'fix_does'  => 'Plakette' === $tool
+						? __( 'Schaltet den Cookie-Banner von Plakette ab. Deine Besucher sehen sofort die Seite.', 'plakette' )
+						: __( 'Deaktiviert das Cookie-Banner-Plugin. Deine Besucher sehen sofort die Seite. Über das Protokoll lässt es sich wieder aktivieren.', 'plakette' ),
+				);
+				if ( 'Plakette' !== $tool && ! $plugin ) {
+					$extra['kind']    = 'none';
+					$extra['blocked'] = sprintf( __( '%s ist nicht als Plugin aktiv (z. B. per Code oder Tag Manager eingebunden) – entferne es dort.', 'plakette' ), $tool );
 				}
 				return $this->warn(
-					sprintf( __( 'Der Cookie-Banner ist aktiv, aber diese Dienste laden trotzdem ohne Einwilligung: %s. Vermutlich werden sie per JavaScript nachgeladen (z. B. über den Tag Manager oder ein Plugin) – stelle sie im jeweiligen Plugin auf „erst nach Einwilligung“ oder binde sie über den Code-Bereich deines Themes ein.', 'plakette' ), implode( ', ', array_map( array( __CLASS__, 'service_name' ), array_keys( $unblocked ) ) ) ),
-					array( 'kind' => 'none', 'notes' => $notes )
+					sprintf( __( 'Dein Cookie-Banner (%s) ist überflüssig: Beim ersten Besuch wird nichts gespeichert und kein fremder Dienst geladen, der eine Einwilligung braucht. Banner nerven Besucher und kosten Anfragen und Umsatz – schalte ihn ab.', 'plakette' ), $tool ),
+					$extra
 				);
 			}
-			if ( 'Plakette' !== $tool ) {
-				return $this->warn( __( 'Der Cookie-Banner ist eingeschaltet, erscheint aber nicht auf der Startseite. Ein Cache oder ein anderes Plugin liefert die Seite womöglich unverändert aus – leere den Cache.', 'plakette' ), array( 'kind' => 'none' ) );
-			}
-			$held = array();
-			foreach ( $found as $id => $hit ) {
-				if ( Plakette_Consent::handles( $id ) ) {
-					$held[] = self::service_name( $id );
-				}
+			if ( $a['review'] ) {
+				return $this->warn(
+					sprintf( __( 'Wahrscheinlich kein Cookie-Banner nötig – prüfe aber diese Einträge: %s.', 'plakette' ), implode( ', ', array_unique( $a['review'] ) ) ),
+					array( 'kind' => 'none', 'notes' => $notes, 'problem' => __( 'Fast kein Cookie-Banner nötig – ein paar Einträge prüfen', 'plakette' ) )
+				);
 			}
 			return $this->pass(
-				$held
-					? sprintf( __( 'Der Cookie-Banner von Plakette ist aktiv und hält diese Dienste bis zur Einwilligung zurück: %s.', 'plakette' ), implode( ', ', $held ) )
-					: __( 'Der Cookie-Banner von Plakette ist aktiv.', 'plakette' )
+				__( 'Kein Cookie-Banner nötig: Beim ersten Besuch werden keine unnötigen Cookies oder Speicher-Einträge angelegt, und es laden keine fremden Dienste, die eine Einwilligung brauchen.', 'plakette' ),
+				array( 'notes' => $notes )
 			);
 		}
 
-		if ( $names ) {
-			return $this->fail( sprintf( __( 'Diese Dienste laden, ohne dass Besucher zugestimmt haben: %s.', 'plakette' ), implode( ', ', $names ) ) );
-		}
-
-		$cookies = array_values( array_filter( $ctx->cookies(), function ( $c ) {
-			return ! self::essential_cookie( $c );
-		} ) );
-		if ( $cookies ) {
-			return $this->warn(
-				sprintf( __( 'Keine Tracking-Dienste gefunden, aber die Startseite setzt diese Cookies: %s. Prüfe, wofür sie da sind: Sind sie technisch nötig (z. B. Warenkorb, Login), brauchst du keinen Banner – sonst musst du vorher fragen.', 'plakette' ), implode( ', ', $cookies ) ),
-				array( 'kind' => 'none' )
+		// Everything that needs consent is held back by a banner.
+		if ( ! $a['loads'] ) {
+			$avoid = array_values( array_intersect( $a['avoidable'], $a['held'] ) );
+			if ( $avoid ) {
+				$items   = self::items( $avoid, false, false );
+				$items[] = array(
+					'id'      => 'off',
+					'label'   => __( 'Danach den Cookie-Banner ausschalten', 'plakette' ),
+					'sub'     => __( 'Nur, wenn nach den Maßnahmen nichts mehr eine Einwilligung braucht.', 'plakette' ),
+					'checked' => ! $keep_banner,
+				);
+				return $this->warn(
+					sprintf( __( 'Dein Cookie-Banner (%1$s) hält %2$s zurück. Das lässt sich ohne Banner lösen.', 'plakette' ), $tool, self::names( $a['held'] ) ) . $without,
+					array( 'items' => $items, 'notes' => $notes, 'problem' => __( 'Dein Cookie-Banner lässt sich vermeiden', 'plakette' ) )
+				);
+			}
+			return $this->pass(
+				sprintf( __( 'Ein Cookie-Banner ist nötig und aktiv (%1$s): Er hält %2$s zurück, bis Besucher zustimmen.', 'plakette' ), $tool, self::names( $a['held'] ) ) . $without,
+				array( 'notes' => $notes, 'title' => __( 'Cookie-Banner nötig und aktiv', 'plakette' ) )
 			);
 		}
-		return $this->pass( __( 'Kein Cookie-Banner nötig: Deine Seite lädt keine Statistik-, Werbe- oder Mediendienste und setzt keine unnötigen Cookies. Ein Banner wäre hier nur lästig – viele Seiten brauchen gar keinen.', 'plakette' ) );
+
+		// Something loads without consent.
+		$avoid       = array_values( array_intersect( $a['avoidable'], $need ) );
+		$keep_loads  = array_values( array_intersect( $keep_banner, $a['loads'] ) );
+		$items       = self::items( array_merge( $avoid, $keep ), (bool) $keep_banner || (bool) array_intersect( $avoid, $need ), (bool) $keep_loads && 'Plakette' !== $tool );
+		$detail      = sprintf( __( 'Ohne Einwilligung laden: %s.', 'plakette' ), self::names( $a['loads'] ) );
+		if ( $avoid ) {
+			$detail .= ' ' . sprintf( __( 'Vermeidbar mit den Maßnahmen unten: %s.', 'plakette' ), self::names( $avoid ) );
+		}
+		$detail .= $without;
+		$extra = array( 'notes' => $notes );
+		if ( ! $avoid ) {
+			$extra['problem'] = __( 'Ein Cookie-Banner ist nötig', 'plakette' );
+		}
+		if ( ! $items ) {
+			$extra['kind'] = 'none';
+		}
+		$extra['items'] = $items;
+		return $this->fail( $detail, $extra );
 	}
 
 	public function fix( array $req, array &$undo ) {
-		$ctx   = new Plakette_Context();
-		$found = $ctx->home_ok() ? self::detect_all( $ctx ) : array();
-		$ids   = array_keys( $found );
-		$media = false;
-		foreach ( self::media_in_posts( $ctx ) as $list ) {
-			$ids   = array_merge( $ids, $list );
-			$media = true;
-		}
-		foreach ( $found as $id => $hit ) {
-			$s = Plakette_Services::get( $id );
-			if ( $s && 'media' === $s['category'] && ! $hit['blocked'] ) {
-				$media = true;
+		$picked = array();
+		foreach ( (array) $req['items'] as $it ) {
+			if ( isset( $it['id'] ) ) {
+				$picked[ (string) $it['id'] ] = true;
 			}
 		}
-		Plakette_Consent::remember( $ids, $undo );
-		Plakette_Log::set_module( 'consent', true, $undo );
-		$msg = __( 'Der Cookie-Banner ist eingeschaltet. Statistik-, Marketing- und Mediendienste laden erst nach Einwilligung.', 'plakette' );
-		if ( $media && ! Plakette_Modules::on( 'embeds' ) ) {
-			list( $dir ) = Plakette_Embeds::storage();
-			if ( ! is_dir( $dir ) ) {
-				$undo[] = array( 'file_delete', $dir );
+		$ctx  = new Plakette_Context();
+		$e    = Plakette_Privacy_Evidence::collect( $ctx );
+		$done = array();
+		$left = array();
+
+		// Superfluous banner (no items) – switch it off.
+		$need = array();
+		foreach ( $e['services'] as $id => $s ) {
+			if ( 'click' !== $s['state'] ) {
+				$need[] = $id;
 			}
-			Plakette_Log::set_module( 'embeds', true, $undo );
-			$msg .= ' ' . __( 'Eingebettete Videos und Karten zeigen jetzt einen Platzhalter.', 'plakette' );
+		}
+		if ( ! $need && empty( $picked ) ) {
+			return $this->banner_off( $e, $undo );
+		}
+
+		$stats  = false;
+		$remove = array();
+		$checks = array();
+		foreach ( $need as $id ) {
+			$m = Plakette_Privacy_Evidence::measure( $id );
+			if ( empty( $m['key'] ) || empty( $picked[ $m['key'] ] ) ) {
+				$left[] = $id;
+				continue;
+			}
+			if ( ! empty( $m['check'] ) ) {
+				$checks[ $m['check'] ] = $m['label'];
+			} elseif ( 0 === strpos( $m['key'], 'remove:' ) ) {
+				$remove[] = $id;
+				$stats    = $stats || 'statistics' === Plakette_Services::get( $id )['category'];
+			}
+		}
+		foreach ( $checks as $check_id => $label ) {
+			$check = Plakette_Auditor::get( $check_id );
+			if ( ! $check ) {
+				continue;
+			}
+			$res    = $check->fix( array( 'value' => '', 'items' => array() ), $undo );
+			$done[] = is_wp_error( $res ) ? $label . ': ' . $res->get_error_message() : $res;
+		}
+		if ( $remove ) {
+			$strip = array();
+			foreach ( $remove as $id ) {
+				$plugin = Plakette_Services::plugin_for( $id );
+				if ( $plugin && is_plugin_active( $plugin[0] ) ) {
+					deactivate_plugins( $plugin[0], true );
+					$undo[] = array( 'activate_plugin', $plugin[0] );
+					$done[] = sprintf( __( 'Plugin „%s“ deaktiviert.', 'plakette' ), $plugin[1] );
+				} elseif ( ! $plugin ) {
+					$strip[] = $id;
+				}
+			}
+			if ( $strip ) {
+				Plakette_Remove_Services::add( $strip, $undo );
+				$done[] = sprintf( __( 'Entfernt: %s.', 'plakette' ), self::names( $strip ) );
+			}
+		}
+		if ( $stats && ! Plakette_Modules::on( 'stats' ) ) {
+			if ( ! get_option( Plakette_Stats::DB_OPTION ) ) {
+				$undo[] = array( 'callback', 'Plakette_Stats::uninstall' );
+			}
+			Plakette_Log::set_module( 'stats', true, $undo );
+			Plakette_Stats::install();
+			$done[] = __( 'Die Plakette-Statistik zählt jetzt Besuche – ohne Cookies, ohne Einwilligung.', 'plakette' );
+		}
+
+		$left_banner = array_values(
+			array_filter(
+				$left,
+				function ( $id ) {
+					return in_array( Plakette_Services::get( $id )['category'], Plakette_Privacy_Evidence::BANNER_CATS, true );
+				}
+			)
+		);
+		if ( $left_banner && ! empty( $picked['banner'] ) && ! Plakette_Modules::on( 'consent' ) ) {
+			Plakette_Consent::remember( $left_banner, $undo );
+			Plakette_Log::set_module( 'consent', true, $undo );
+			$done[] = sprintf( __( 'Der Plakette-Cookie-Banner ist eingeschaltet und hält %s bis zur Einwilligung zurück.', 'plakette' ), self::names( $left_banner ) );
+		}
+		if ( ! $left_banner && ! empty( $picked['off'] ) ) {
+			$off = $this->banner_off( $e, $undo );
+			if ( is_string( $off ) ) {
+				$done[] = $off;
+			}
 		}
 		Plakette_Page_Cache::purge_all();
-		if ( ! get_privacy_policy_url() ) {
-			$msg .= ' ' . __( 'Tipp: Lege eine Datenschutzerklärung an – der Banner verlinkt sie automatisch.', 'plakette' );
+
+		$msg = implode( ' ', $done );
+		if ( ! $left ) {
+			$msg .= ' ' . __( 'Damit braucht deine Website keinen Cookie-Banner mehr. Starte zur Kontrolle die Datenschutz-Messung.', 'plakette' );
+		} else {
+			$msg .= ' ' . sprintf( __( 'Noch offen: %s.', 'plakette' ), self::names( $left ) );
+			if ( Plakette_Modules::on( 'consent' ) && $left_banner ) {
+				$msg .= ' ' . sprintf( __( 'Ohne Banner geht es nur, wenn du auf %s verzichtest.', 'plakette' ), self::names( $left_banner ) );
+			}
 		}
-		return $msg;
+		return trim( $msg );
+	}
+
+	/** Switch a superfluous banner off (ours or a consent plugin). */
+	private function banner_off( array $e, array &$undo ) {
+		if ( Plakette_Modules::on( 'consent' ) ) {
+			Plakette_Log::set_module( 'consent', null, $undo );
+			Plakette_Page_Cache::purge_all();
+			return __( 'Der Cookie-Banner ist ausgeschaltet. Deine Besucher sehen sofort die Seite.', 'plakette' );
+		}
+		$plugin = Plakette_Privacy_Evidence::consent_plugin();
+		if ( $plugin ) {
+			deactivate_plugins( $plugin[0], true );
+			$undo[] = array( 'activate_plugin', $plugin[0] );
+			Plakette_Page_Cache::purge_all();
+			return sprintf( __( '%s ist deaktiviert. Deine Besucher sehen sofort die Seite.', 'plakette' ), $plugin[1] );
+		}
+		return new WP_Error( 'plakette_consent', __( 'Es ist kein Cookie-Banner aktiv, den Plakette abschalten könnte.', 'plakette' ) );
 	}
 }
 
@@ -622,7 +1114,7 @@ add_filter(
 			$c,
 			array(
 				'Plakette_Check_Privacy_Third_Party',
-				'Plakette_Check_Legal_Consent',
+				'Plakette_Check_Privacy_Consent',
 				'Plakette_Check_Privacy_Embeds',
 				'Plakette_Check_Privacy_Gravatar',
 				'Plakette_Check_Privacy_Comment_Ip',

@@ -5,7 +5,7 @@
  * Description:       Die Hauptuntersuchung für deine WordPress-Website: prüft Datenschutz, Sicherheit, Geschwindigkeit und SEO, erklärt jeden Mangel in einfachen Worten und behebt ihn auf Knopfdruck – jederzeit rückgängig. Aktualisiert sich automatisch aus GitHub.
  * Version:           1.0.0
  * Requires at least: 6.5
- * Requires PHP:      7.4
+ * Requires PHP:      8.1
  * Author:            i-make.media | Magnus Brühl
  * Author URI:        https://i-make.media
  * License:           GPL-2.0-or-later

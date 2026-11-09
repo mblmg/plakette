@@ -304,6 +304,26 @@ class Plakette_Services {
 				'consent'  => true,
 				'aliases'  => array( 'Calendly' ),
 			),
+			'microsoft-ads' => array(
+				'name'     => 'Microsoft Advertising (Bing UET)',
+				'category' => 'marketing',
+				'hosts'    => array( 'bat.bing.com', 'bat.bing.net' ),
+				'patterns' => array( '#bat\.bing\.com/bat\.js#', '#uetq\s*=#' ),
+				'provider' => 'Microsoft Ireland Operations Limited, One Microsoft Place, South County Business Park, Leopardstown, Dublin 18, Irland',
+				'policy'   => 'Diese Website nutzt das Conversion-Tracking „Universal Event Tracking“ von Microsoft Advertising, um den Erfolg von Anzeigen in der Suchmaschine Bing zu messen. Dabei werden Cookies gesetzt und Daten ggf. in die USA übertragen (EU-US Data Privacy Framework). Die Nutzung erfolgt nur mit Ihrer Einwilligung (Art. 6 Abs. 1 lit. a DSGVO, § 25 Abs. 1 TDDDG).',
+				'consent'  => true,
+				'aliases'  => array( 'Bing', 'Microsoft Advertising', 'UET' ),
+			),
+			'cloudflare-insights' => array(
+				'name'     => 'Cloudflare Web Analytics',
+				'category' => 'statistics',
+				'hosts'    => array( 'static.cloudflareinsights.com', 'cloudflareinsights.com' ),
+				'patterns' => array( '#static\.cloudflareinsights\.com/beacon#' ),
+				'provider' => 'Cloudflare, Inc., 101 Townsend St., San Francisco, CA 94107, USA',
+				'policy'   => 'Diese Website nutzt Cloudflare Web Analytics für eine Reichweitenmessung ohne Cookies. Dabei wird Ihre IP-Adresse an Cloudflare (USA) übertragen. Die Nutzung erfolgt nur mit Ihrer Einwilligung (Art. 6 Abs. 1 lit. a DSGVO).',
+				'consent'  => true,
+				'aliases'  => array( 'Cloudflare Web Analytics', 'Cloudflare Insights' ),
+			),
 		);
 		return (array) apply_filters( 'plakette_services', $s );
 	}
@@ -462,5 +482,132 @@ class Plakette_Services {
 			'media'      => __( 'Externe Medien', 'plakette' ),
 		);
 		return isset( $labels[ $cat ] ) ? $labels[ $cat ] : $cat;
+	}
+
+	/* ------------------------------------------------------------------ cookies and browser storage */
+
+	/**
+	 * What a cookie or storage key is, whether it is technically necessary (§ 25 Abs. 2 Nr. 2 TDDDG) and how to avoid it.
+	 *
+	 * Each entry:
+	 *   re         regex on the name (cookie name or localStorage/sessionStorage key)
+	 *   label      what it is (service)
+	 *   service    catalogue id (if any) – the measure for the service applies
+	 *   purpose    what it does
+	 *   necessary  yes | no | depends
+	 *   reason     why (for "depends": when it is necessary)
+	 *   plugin     which plugin typically sets it
+	 *   measure    what avoids it (plain text, du-form)
+	 *
+	 * @return array[]
+	 */
+	public static function storage_kb() {
+		$kb = array(
+			array( 're' => '/^(_ga|_ga_[A-Z0-9]+|_gid|_gat.*|__utm[a-z])$/', 'label' => 'Google Analytics', 'service' => 'google-analytics', 'purpose' => __( 'Wiedererkennung von Besuchern für Statistiken', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Statistik ist für das Anzeigen der Seite nicht nötig.', 'plakette' ), 'plugin' => 'Site Kit, MonsterInsights, ExactMetrics, GA Google Analytics oder Code im Theme', 'measure' => __( 'Google Analytics entfernen und durch die Plakette-Statistik (ohne Cookies) ersetzen.', 'plakette' ) ),
+			array( 're' => '/^(_gcl_.*|_gac_.*|IDE|test_cookie|NID|1P_JAR|AEC)$/', 'label' => 'Google Ads / DoubleClick', 'service' => 'google-ads', 'purpose' => __( 'Erfolgsmessung von Anzeigen, Werbe-Profile', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Werbung ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'Site Kit, Google Tag Manager, Code im Theme', 'measure' => __( 'Nur mit Banner möglich – brauchst du das Conversion-Tracking wirklich?', 'plakette' ) ),
+			array( 're' => '/^(_fbp|_fbc|fr)$/', 'label' => 'Meta Pixel (Facebook)', 'service' => 'facebook-pixel', 'purpose' => __( 'Erfolgsmessung von Facebook-/Instagram-Werbung, Zielgruppen', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Werbung ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'PixelYourSite, Meta for WordPress (Facebook for WordPress), Code im Theme', 'measure' => __( 'Nur mit Banner möglich – brauchst du den Pixel wirklich?', 'plakette' ) ),
+			array( 're' => '/^(_hj.*|hjActiveViewportIds|hjViewportId)$/', 'label' => 'Hotjar', 'service' => 'hotjar', 'purpose' => __( 'Aufzeichnung von Klicks und Mausbewegungen', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Verhaltensanalyse ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'Hotjar-Plugin oder Code im Theme', 'measure' => __( 'Hotjar entfernen; für Besucherzahlen reicht die Plakette-Statistik.', 'plakette' ) ),
+			array( 're' => '/^(_clck|_clsk|CLID|ANONCHK)$/', 'label' => 'Microsoft Clarity', 'service' => 'clarity', 'purpose' => __( 'Sitzungsaufzeichnung und Heatmaps', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Verhaltensanalyse ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'Microsoft Clarity-Plugin oder Code im Theme', 'measure' => __( 'Clarity entfernen; für Besucherzahlen reicht die Plakette-Statistik.', 'plakette' ) ),
+			array( 're' => '/^(_uet.*|MUID)$/', 'label' => 'Microsoft Advertising', 'service' => 'microsoft-ads', 'purpose' => __( 'Erfolgsmessung von Bing-Anzeigen', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Werbung ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'Code im Theme oder Tag Manager', 'measure' => __( 'Nur mit Banner möglich – brauchst du das Tracking wirklich?', 'plakette' ) ),
+			array( 're' => '/^(_pk_.*|MATOMO_.*|mtm_.*|PIWIK_.*)$/', 'label' => 'Matomo', 'service' => 'matomo-cloud', 'purpose' => __( 'Wiedererkennung von Besuchern für Statistiken', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Mit Cookies braucht Matomo eine Einwilligung; ohne Cookies nicht.', 'plakette' ), 'plugin' => 'Matomo / WP-Matomo (WP-Piwik)', 'measure' => __( 'Matomo ohne Cookies betreiben (Einstellung „Cookies deaktivieren“, im Code _paq.push([\'disableCookies\'])) oder die Plakette-Statistik nutzen.', 'plakette' ) ),
+			array( 're' => '/^(li_.*|lidc|bcookie|bscookie|AnalyticsSyncHistory|UserMatchHistory|lms_.*)$/', 'label' => 'LinkedIn Insight Tag', 'service' => 'linkedin-insight', 'purpose' => __( 'Erfolgsmessung von LinkedIn-Anzeigen', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Werbung ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'Code im Theme oder Tag Manager', 'measure' => __( 'Nur mit Banner möglich – brauchst du das Insight Tag wirklich?', 'plakette' ) ),
+			array( 're' => '/^(_tt_.*|_ttp|tt_.*|ttwid)$/', 'label' => 'TikTok Pixel', 'service' => 'tiktok-pixel', 'purpose' => __( 'Erfolgsmessung von TikTok-Anzeigen', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Werbung ist nicht technisch notwendig.', 'plakette' ), 'plugin' => 'TikTok-Plugin, PixelYourSite oder Code im Theme', 'measure' => __( 'Nur mit Banner möglich – brauchst du den Pixel wirklich?', 'plakette' ) ),
+			array( 're' => '/^(_grecaptcha|rc::[a-z])$/', 'label' => 'Google reCAPTCHA', 'service' => 'recaptcha', 'purpose' => __( 'Spamschutz mit Verhaltensanalyse durch Google', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Die Aufsichtsbehörden sehen reCAPTCHA nicht als technisch notwendig an.', 'plakette' ), 'plugin' => 'Contact Form 7, WPForms, Elementor-Formulare u. a.', 'measure' => __( 'Spamschutz ohne Google: Honigtopf/Zeitfalle (Contact Form 7: „Honeypot for Contact Form 7“, WPForms: eingebauter Spamschutz) oder Friendly Captcha (EU-gehostet).', 'plakette' ) ),
+			array( 're' => '/^(yt-.*|ytidb::.*|VISITOR_INFO1_LIVE|VISITOR_PRIVACY_METADATA|YSC|PREF|__Secure-YEC|LOGIN_INFO)$/', 'label' => 'YouTube', 'service' => 'youtube', 'purpose' => __( 'Wiedererkennung durch YouTube/Google', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Ein eingebettetes Video ist erst nötig, wenn der Besucher es abspielen will.', 'plakette' ), 'plugin' => __( 'Eingebettete Videos', 'plakette' ), 'measure' => __( 'Zwei-Klick-Lösung: das Video lädt erst nach Klick.', 'plakette' ) ),
+			array( 're' => '/^(vuid|__cf_bm_vimeo)$/', 'label' => 'Vimeo', 'service' => 'vimeo', 'purpose' => __( 'Wiedererkennung durch Vimeo', 'plakette' ), 'necessary' => 'no', 'reason' => __( 'Ein eingebettetes Video ist erst nötig, wenn der Besucher es abspielen will.', 'plakette' ), 'plugin' => __( 'Eingebettete Videos', 'plakette' ), 'measure' => __( 'Zwei-Klick-Lösung: das Video lädt erst nach Klick.', 'plakette' ) ),
+			array( 're' => '/^PHPSESSID$/', 'label' => __( 'PHP-Sitzung', 'plakette' ), 'service' => '', 'purpose' => __( 'Ein Plugin startet für jeden Besucher eine Sitzung auf dem Server', 'plakette' ), 'necessary' => 'depends', 'reason' => __( 'Nur nötig, wenn der Besucher eine Funktion nutzt, die sie braucht (Login, Warenkorb, Formular mit mehreren Schritten) – nicht schon beim ersten Aufruf.', 'plakette' ), 'plugin' => '', 'measure' => __( 'Das Plugin so einstellen, dass es die Sitzung erst bei Bedarf startet, oder es ersetzen.', 'plakette' ) ),
+			array( 're' => '/^wordpress_test_cookie$/', 'label' => 'WordPress', 'service' => '', 'purpose' => __( 'Prüft, ob der Browser Cookies annimmt – für die Anmeldung', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Nur für die Anmeldung; normalerweise nur auf der Login-Seite.', 'plakette' ), 'plugin' => 'WordPress', 'measure' => '' ),
+			array( 're' => '/^(wp-settings-.*|wp-settings-time-.*|wordpress_logged_in_.*|wordpress_sec_.*|wordpress_[0-9a-f]{32}|wp_lang|wp-postpass_.*)$/', 'label' => 'WordPress', 'service' => '', 'purpose' => __( 'Anmeldung, Sprache der Login-Seite, passwortgeschützte Beiträge', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Nur für angemeldete Nutzer bzw. nach einer Eingabe des Besuchers.', 'plakette' ), 'plugin' => 'WordPress', 'measure' => '' ),
+			array( 're' => '/^comment_author_.*$/', 'label' => __( 'WordPress-Kommentare', 'plakette' ), 'service' => '', 'purpose' => __( 'Merkt Name und E-Mail für den nächsten Kommentar', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Nur nach ausdrücklicher Zustimmung im Kommentarformular.', 'plakette' ), 'plugin' => 'WordPress', 'measure' => '' ),
+			array( 're' => '/^(woocommerce_cart_hash|woocommerce_items_in_cart|wp_woocommerce_session_.*|wc_cart_hash_.*|wc_fragments_.*|wc_cart_created|woocommerce_dismissed_.*|sbjs_.*)$/', 'label' => 'WooCommerce', 'service' => '', 'purpose' => __( 'Warenkorb', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Nötig, sobald jemand einkauft; WooCommerce setzt die Cookies normalerweise erst, wenn etwas im Warenkorb liegt.', 'plakette' ), 'plugin' => 'WooCommerce', 'measure' => '' ),
+			array( 're' => '/^(woocommerce_recently_viewed)$/', 'label' => 'WooCommerce', 'service' => '', 'purpose' => __( 'Zuletzt angesehene Produkte', 'plakette' ), 'necessary' => 'depends', 'reason' => __( 'Komfortfunktion, nicht notwendig.', 'plakette' ), 'plugin' => 'WooCommerce (Widget „Zuletzt angesehene Produkte“)', 'measure' => __( 'Das Widget „Zuletzt angesehene Produkte“ entfernen.', 'plakette' ) ),
+			array( 're' => '/^(pll_language|wp-wpml_current_language|_icl_current_language|wp-wpml_current_admin_language_.*|trp_language)$/', 'label' => __( 'Sprachwahl', 'plakette' ), 'service' => '', 'purpose' => __( 'Merkt die Sprache der Website', 'plakette' ), 'necessary' => 'depends', 'reason' => __( 'Notwendig, wenn der Besucher die Sprache selbst gewählt hat. Schon beim ersten Besuch gesetzt, ist es umstritten.', 'plakette' ), 'plugin' => 'Polylang, WPML, TranslatePress', 'measure' => __( 'Das Cookie erst nach einer Sprachwahl setzen: Polylang → in wp-config.php „define( \'PLL_COOKIE\', false );“; WPML → Sprachen › „Cookie für Sprachwahl“ abschalten (die Sprache steht ohnehin in der Adresse).', 'plakette' ) ),
+			array( 're' => '/^(cf_clearance|__cf_bm|__cflb|_cfuvid|cf_chl_.*)$/', 'label' => 'Cloudflare', 'service' => '', 'purpose' => __( 'Schutz vor Bots und Angriffen', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Sicherheit des Angebots – technisch notwendig.', 'plakette' ), 'plugin' => __( 'Cloudflare (beim Hoster bzw. DNS)', 'plakette' ), 'measure' => '' ),
+			array( 're' => '/^(__stripe_mid|__stripe_sid)$/', 'label' => 'Stripe', 'service' => 'stripe', 'purpose' => __( 'Betrugsschutz bei Zahlungen', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Für eine sichere Zahlung notwendig.', 'plakette' ), 'plugin' => 'WooCommerce Stripe, WP Simple Pay u. a.', 'measure' => '' ),
+			array( 're' => '/^(plakette_consent|borlabs-cookie|borlabs-cookie-.*|cmplz_.*|complianz_.*|CookieConsent|CookieConsentBulkSetting-.*|real_cookie_banner.*|rcb-.*|cookieyes-consent|cky-consent|cky-action|OptanonConsent|OptanonAlertBoxClosed|uc_settings|uc_user_interaction|ucData|euconsent-v2|moove_gdpr_popup|cookielawinfo-.*|viewed_cookie_policy|cookie_notice_accepted|gdpr\[.*|iubenda.*|_iub_cs-.*|cookie-agreed.*|klaro|cmapi_.*|__cmpcc.*)$/', 'label' => __( 'Cookie-Banner', 'plakette' ), 'service' => '', 'purpose' => __( 'Speichert die Einwilligung des Besuchers', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Der Nachweis der Einwilligung ist technisch notwendig.', 'plakette' ), 'plugin' => 'Plakette, Borlabs Cookie, Complianz, Real Cookie Banner, CookieYes, Cookiebot, Usercentrics …', 'measure' => '' ),
+		);
+		return (array) apply_filters( 'plakette_storage_kb', $kb );
+	}
+
+	/** Knowledge-base entry for a cookie or storage key; unknown names get a "depends" entry. */
+	public static function classify_storage( $name ) {
+		$name = (string) $name;
+		foreach ( self::storage_kb() as $e ) {
+			if ( @preg_match( $e['re'], $name ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
+				return $e;
+			}
+		}
+		return array(
+			're'        => '',
+			'label'     => __( 'unbekannt', 'plakette' ),
+			'service'   => '',
+			'purpose'   => __( 'unbekannt', 'plakette' ),
+			'necessary' => 'depends',
+			'reason'    => __( 'Plakette kennt diesen Namen nicht.', 'plakette' ),
+			'plugin'    => '',
+			'measure'   => __( 'Prüfen, welches Plugin es setzt (Plugins einzeln deaktivieren und neu messen), und ob es technisch nötig ist.', 'plakette' ),
+		);
+	}
+
+	/** Regex (JavaScript syntax) matching the cookies of consent tools – the browser probe removes them for a "first visit". */
+	public static function consent_cookie_pattern() {
+		return '^(plakette_consent|borlabs-cookie.*|cmplz_.*|complianz_.*|CookieConsent.*|real_cookie_banner.*|rcb-.*|cookieyes-consent|cky-.*|OptanonConsent|OptanonAlertBoxClosed|uc_.*|euconsent-v2|moove_gdpr_popup|cookielawinfo-.*|viewed_cookie_policy|cookie_notice_accepted|_iub_cs-.*|klaro|cmapi_.*|__cmpcc.*)$';
+	}
+
+	/**
+	 * Plugins that typically add a service: basename => [ name, service ids ]. Used to offer "deactivate the plugin" instead
+	 * of stripping its output.
+	 */
+	public static function plugins() {
+		return (array) apply_filters(
+			'plakette_service_plugins',
+			array(
+				'google-site-kit/google-site-kit.php'                         => array( 'Site Kit by Google', array( 'google-analytics', 'google-tag-manager', 'google-ads' ) ),
+				'google-analytics-for-wordpress/googleanalytics.php'          => array( 'MonsterInsights', array( 'google-analytics', 'google-tag-manager' ) ),
+				'google-analytics-premium/googleanalytics-premium.php'        => array( 'MonsterInsights Pro', array( 'google-analytics', 'google-tag-manager' ) ),
+				'google-analytics-dashboard-for-wp/gadwp.php'                 => array( 'ExactMetrics', array( 'google-analytics', 'google-tag-manager' ) ),
+				'ga-google-analytics/ga-google-analytics.php'                 => array( 'GA Google Analytics', array( 'google-analytics', 'google-tag-manager' ) ),
+				'duracelltomi-google-tag-manager/duracelltomi-google-tag-manager-for-wordpress.php' => array( 'GTM4WP', array( 'google-tag-manager' ) ),
+				'pixelyoursite/pixelyoursite.php'                             => array( 'PixelYourSite', array( 'facebook-pixel', 'google-analytics', 'tiktok-pixel' ) ),
+				'official-facebook-pixel/facebook-for-wordpress.php'          => array( 'Meta for WordPress', array( 'facebook-pixel' ) ),
+				'facebook-for-woocommerce/facebook-for-woocommerce.php'       => array( 'Facebook for WooCommerce', array( 'facebook-pixel' ) ),
+				'hotjar/hotjar.php'                                           => array( 'Hotjar', array( 'hotjar' ) ),
+				'microsoft-clarity/clarity.php'                               => array( 'Microsoft Clarity', array( 'clarity' ) ),
+				'insert-headers-and-footers/ihaf.php'                         => array( 'WPCode (Kopf- und Fußzeilen-Code)', array() ),
+			)
+		);
+	}
+
+	/** Active plugin that delivers a service: [ basename, name ] or null. */
+	public static function plugin_for( $service ) {
+		$active = (array) get_option( 'active_plugins', array() );
+		foreach ( self::plugins() as $base => $p ) {
+			if ( in_array( $service, $p[1], true ) && in_array( $base, $active, true ) ) {
+				return array( $base, $p[0] );
+			}
+		}
+		return null;
+	}
+
+	/** Service id of one script element (src or inline code), or ''. */
+	public static function for_script( $open_tag, $code ) {
+		$src = Plakette_Html::attr( $open_tag, 'src' );
+		if ( '' === $src ) {
+			$src = Plakette_Html::attr( $open_tag, 'data-plakette-src' );
+		}
+		if ( '' !== $src ) {
+			return preg_match( '#^(https?:)?//#i', $src ) ? self::for_url( $src ) : '';
+		}
+		if ( '' === trim( (string) $code ) ) {
+			return '';
+		}
+		foreach ( self::all() as $id => $s ) {
+			foreach ( $s['patterns'] as $re ) {
+				if ( @preg_match( $re, $code ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
+					return $id;
+				}
+			}
+		}
+		return '';
 	}
 }

@@ -133,28 +133,29 @@ class Plakette_Consent {
 
 	/** Service id for one script element (src or inline code) that our banner must hold back, or ''. */
 	public static function script_service( $open_tag, $code ) {
-		$src = Plakette_Html::attr( $open_tag, 'src' );
-		if ( '' !== $src ) {
-			if ( ! preg_match( '#^(https?:)?//#i', $src ) ) {
-				return '';
-			}
-			$id = Plakette_Services::for_url( $src );
-			return $id && self::handles( $id ) ? $id : '';
-		}
-		if ( '' === trim( $code ) ) {
-			return '';
-		}
-		foreach ( Plakette_Services::all() as $id => $s ) {
-			if ( ! self::handles( $id ) ) {
-				continue;
-			}
-			foreach ( $s['patterns'] as $re ) {
-				if ( @preg_match( $re, $code ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
-					return $id;
-				}
-			}
-		}
-		return '';
+		$id = Plakette_Services::for_script( $open_tag, $code );
+		return $id && self::handles( $id ) ? $id : '';
+	}
+
+	/**
+	 * Fingerprint of everything that changes what a first visitor gets (modules, plugins, theme, banner services).
+	 * A browser measurement taken under another fingerprint is outdated.
+	 */
+	public static function signature() {
+		return substr(
+			md5(
+				wp_json_encode(
+					array(
+						get_option( 'plakette_modules', array() ),
+						get_option( 'active_plugins', array() ),
+						get_option( 'stylesheet' ),
+						self::services(),
+					)
+				)
+			),
+			0,
+			12
+		);
 	}
 
 	/** Rewrites consent-requiring scripts so the browser does not run them. @return string */

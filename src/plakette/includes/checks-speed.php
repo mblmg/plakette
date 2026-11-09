@@ -304,33 +304,89 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 class Plakette_Check_Webp extends Plakette_Speed_Check {
 	public $id        = 'speed_webp';
 	public $group     = 'Bilder';
-	public $weight    = 3;
-	public $title     = 'Neue Bilder im modernen WebP-Format';
-	public $problem   = 'Neue Bilder werden im alten JPEG/PNG-Format gespeichert';
-	public $explain   = 'WebP ist ein Bildformat, das bei gleicher Qualität etwa 25–35 % kleiner ist als JPEG. Alle aktuellen Browser können es anzeigen.';
-	public $fix_label = 'WebP für neue Uploads einschalten';
-	public $fix_does  = 'Ab jetzt erzeugt WordPress beim Hochladen die verkleinerten Bildversionen als WebP. Deine bisherigen Bilder bleiben unverändert.';
+	public $weight    = 5;
+	public $title     = 'Moderne Bildformate (AVIF/WebP)';
+	public $problem   = 'Bilder werden nur als JPEG/PNG ausgeliefert';
+	public $explain   = 'AVIF und WebP sind moderne Bildformate: Bei gleicher Qualität ist WebP etwa die Hälfte, AVIF noch einmal 20–25 % kleiner als JPEG. Kleinere Bilder heißen schnellere Seiten – besonders am Handy. Ältere Browser können AVIF nicht anzeigen; deshalb gehört immer das Original als Rückfall dazu.';
+	public $fix_label = 'Bilder umwandeln';
+	public $fix_does  = 'Plakette legt neben jedes Bild und jede Bildgröße eine AVIF- und eine WebP-Kopie (nur, wenn sie wirklich kleiner ist). Beim Ausliefern bekommt jeder Browser das kleinste Format, das er kann – ältere Browser weiter das Original. Neue Uploads wandelt Plakette automatisch um. Deine Originale bleiben unverändert; „Rückgängig“ löscht genau die Kopien, die Plakette angelegt hat.';
+	public $kind      = 'items';
+	public $batch     = 3;
 
 	public function run( Plakette_Context $ctx ) {
-		if ( Plakette_Modules::on( 'webp_uploads' ) ) {
-			return $this->pass( __( 'Neue Uploads werden als WebP gespeichert.', 'plakette' ) );
-		}
-		$formats = apply_filters( 'image_editor_output_format', array(), '', 'image/jpeg' );
-		if ( isset( $formats['image/jpeg'] ) && in_array( $formats['image/jpeg'], array( 'image/webp', 'image/avif' ), true ) ) {
+		$formats = Plakette_Modern_Images::formats();
+		$output  = apply_filters( 'image_editor_output_format', array(), '', 'image/jpeg' );
+		if ( ! Plakette_Modern_Images::active() && isset( $output['image/jpeg'] ) && in_array( $output['image/jpeg'], array( 'image/webp', 'image/avif' ), true ) ) {
 			return $this->pass( __( 'Ein anderes Plugin speichert neue Bilder bereits in einem modernen Format.', 'plakette' ) );
 		}
-		if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) {
+		if ( ! $formats['webp'] && ! $formats['avif'] ) {
 			return $this->warn(
-				__( 'Der Server kann noch keine WebP-Bilder erzeugen.', 'plakette' ),
-				array( 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie WebP-Unterstützung in der PHP-Erweiterung GD oder Imagick, damit WordPress Bilder im WebP-Format speichern kann.', 'plakette' ) ) )
+				__( 'Der Server kann weder WebP noch AVIF erzeugen.', 'plakette' ),
+				array( 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie AVIF- und WebP-Unterstützung in der PHP-Erweiterung GD oder Imagick, damit WordPress Bilder in modernen Formaten speichern kann.', 'plakette' ) ) )
 			);
 		}
-		return $this->warn( __( 'Der Server kann WebP – es wird nur noch nicht genutzt.', 'plakette' ) );
+		$which = $formats['avif'] ? 'AVIF + WebP' : 'WebP';
+		$todo  = Plakette_Modern_Images::todo();
+		if ( ! $todo ) {
+			if ( Plakette_Modern_Images::active() ) {
+				$s = Plakette_Modern_Images::stats();
+				return $this->pass( sprintf( __( '%1$d Bilder als %2$s vorhanden, %3$s gespart. Jeder Browser bekommt das kleinste Format, das er kann.', 'plakette' ), $s['images'], $which, self::size( $s['saved'] ) ) );
+			}
+			return $this->pass( __( 'Keine JPEG- oder PNG-Bilder in der Mediathek.', 'plakette' ) );
+		}
+		$items = array();
+		foreach ( array_slice( $todo, 0, 300 ) as $id ) {
+			$file    = (string) get_attached_file( $id );
+			$items[] = array(
+				'id'    => 'att:' . $id,
+				'label' => wp_basename( $file ),
+				'sub'   => sprintf( _n( '%d Bildgröße', '%d Bildgrößen', count( Plakette_Modern_Images::attachment_files( $id ) ), 'plakette' ), count( Plakette_Modern_Images::attachment_files( $id ) ) ),
+				'thumb' => wp_get_attachment_image_url( $id, 'thumbnail' ),
+			);
+		}
+		$detail = sprintf( _n( '%1$d Bild gibt es nur als JPEG/PNG – der Server kann %2$s.', '%1$d Bilder gibt es nur als JPEG/PNG – der Server kann %2$s.', count( $todo ), 'plakette' ), count( $todo ), $which );
+		if ( Plakette_Modern_Images::active() ) {
+			return $this->warn( $detail . ' ' . __( 'Moderne Formate sind eingeschaltet; diese Bilder sind noch nicht umgewandelt.', 'plakette' ), array( 'items' => $items ) );
+		}
+		return $this->fail( $detail, array( 'items' => $items ) );
 	}
 
 	public function fix( array $req, array &$undo ) {
-		Plakette_Log::set_module( 'webp_uploads', true, $undo );
-		return __( 'Neue Uploads werden als WebP gespeichert.', 'plakette' );
+		if ( ! Plakette_Modules::on( 'modern_images' ) ) {
+			Plakette_Log::set_module( 'modern_images', true, $undo );
+			// Undo of the module also removes copies made later for new uploads (replayed before the module goes off).
+			$undo[] = array( 'callback', 'Plakette_Modern_Images::clear_all' );
+		}
+		$deadline = microtime( true ) + Plakette_Modern_Images::BUDGET;
+		$done     = 0;
+		$left     = 0;
+		$saved    = 0;
+		$files    = 0;
+		foreach ( (array) ( isset( $req['items'] ) ? $req['items'] : array() ) as $item ) {
+			if ( ! preg_match( '/^att:(\d+)$/', isset( $item['id'] ) ? (string) $item['id'] : '', $m ) || ! current_user_can( 'edit_post', (int) $m[1] ) ) {
+				continue;
+			}
+			$id = (int) $m[1];
+			if ( microtime( true ) > $deadline ) {
+				++$left;
+				continue;
+			}
+			$existed = metadata_exists( 'post', $id, Plakette_Modern_Images::META );
+			$undo[]  = array( 'postmeta', $id, Plakette_Modern_Images::META, $existed, $existed ? get_post_meta( $id, Plakette_Modern_Images::META, true ) : null );
+			$r       = Plakette_Modern_Images::convert_attachment( $id, $deadline );
+			foreach ( array_keys( $r['created'] ) as $file ) {
+				$undo[] = array( 'file_delete', $file );
+				++$files;
+			}
+			$saved += $r['saved'];
+			$r['done'] ? ++$done : ++$left;
+		}
+		Plakette_Page_Cache::purge_all();
+		$msg = sprintf( __( '%1$d Bilder umgewandelt (%2$d neue Dateien), %3$s kleiner.', 'plakette' ), $done, $files, self::size( $saved ) );
+		if ( $left ) {
+			$msg .= ' ' . sprintf( __( '%d Bilder sind noch offen – Plakette macht im Hintergrund weiter, oder starte die Prüfung erneut.', 'plakette' ), $left );
+		}
+		return $msg;
 	}
 }
 
@@ -342,24 +398,11 @@ class Plakette_Check_Lcp_Image extends Plakette_Speed_Check {
 	public $problem   = 'Das größte Bild oben auf der Startseite lädt zu spät';
 	public $explain   = 'Google misst, wann das größte sichtbare Element erscheint (LCP – „größter sichtbarer Inhalt“). Ist das ein Bild, sollte der Browser es sofort laden – und zwar in einem kleinen, modernen Format. Oft ist es aber auf „später laden“ gestellt, weil WordPress oder der Page Builder nicht weiß, welches Bild oben steht.';
 	public $fix_label = 'Bild vorrangig laden';
-	public $fix_does  = 'Plakette sucht auf jeder Seite das erste große Bild im Hauptbereich (bzw. das gemessene Bild der Startseite), nimmt dort „später laden“ heraus, gibt ihm höchste Priorität und meldet es dem Browser schon im Kopf der Seite an. Kann dein Server WebP, wird das Bild zusätzlich als kleinere WebP-Datei ausgeliefert (nur wenn sie wirklich kleiner ist; das Original bleibt). Ein anderes Bild wählst du mit der CSS-Klasse plk-lcp.';
+	public $fix_does  = 'Plakette sucht auf jeder Seite das erste große Bild im Hauptbereich (bzw. das gemessene Bild der Startseite), nimmt dort „später laden“ heraus, gibt ihm höchste Priorität und meldet es dem Browser schon im Kopf der Seite an. Gibt es moderne Kopien (Prüfpunkt „Moderne Bildformate“), meldet Plakette gleich das AVIF- bzw. WebP-Bild an. Ein anderes Bild wählst du mit der CSS-Klasse plk-lcp.';
 
-	/** Can this image be delivered as WebP by Plakette (local JPEG/PNG and WebP support)? */
-	private static function webp_possible( $url ) {
-		$path = Plakette_Performance::local_path( (string) $url );
-		return $path && preg_match( '/\.(jpe?g|png)$/i', $path ) && wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) );
-	}
-
-	/** Pass – or a hint that the image could be smaller as WebP. */
+	/** Pass with the format the browser gets. */
 	private function good( $url, $detail ) {
-		if ( ! Plakette_Modules::on( 'lcp_webp' ) && self::webp_possible( $url ) ) {
-			return $this->warn(
-				$detail . ' ' . __( 'Es ist aber eine JPEG/PNG-Datei – als WebP wäre es meist 25–35 % kleiner und damit schneller da.', 'plakette' ),
-				array( 'fix_label' => __( 'Als WebP ausliefern', 'plakette' ) )
-			);
-		}
-		$is_webp = (bool) preg_match( '/\.webp($|\?)/i', (string) $url );
-		return $this->pass( $detail . ( $is_webp ? ' ' . __( 'Format: WebP.', 'plakette' ) : '' ) );
+		return $this->pass( $detail );
 	}
 
 	public function run( Plakette_Context $ctx ) {
@@ -424,15 +467,8 @@ class Plakette_Check_Lcp_Image extends Plakette_Speed_Check {
 		if ( ! Plakette_Modules::on( 'lcp_auto' ) ) {
 			Plakette_Log::set_module( 'lcp_auto', true, $undo );
 		}
-		$webp = '';
-		if ( ! Plakette_Modules::on( 'lcp_webp' ) && wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) {
-			Plakette_Log::set_module( 'lcp_webp', true, $undo );
-			// Undo also removes the WebP copies Plakette created (replayed before the module is switched off).
-			$undo[] = array( 'callback', 'Plakette_Performance::clear_webp' );
-			$webp   = ' ' . __( 'Ist die WebP-Version kleiner, bekommen Besucher diese.', 'plakette' );
-		}
 		Plakette_Page_Cache::purge_all();
-		return __( 'Das wichtigste Bild wird jetzt vorrangig geladen.', 'plakette' ) . $webp . ' ' . __( 'Miss die Ladezeit erneut, um den Unterschied zu sehen.', 'plakette' );
+		return __( 'Das wichtigste Bild wird jetzt vorrangig geladen.', 'plakette' ) . ' ' . __( 'Miss die Ladezeit erneut, um den Unterschied zu sehen.', 'plakette' );
 	}
 }
 

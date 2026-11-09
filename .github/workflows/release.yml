@@ -26,9 +26,9 @@ jobs:
           [ "$TAG" = "$HEADER" ] && [ "$TAG" = "$CONST" ] && [ "$TAG" = "$STABLE" ] || { echo "::error::Tag, Plugin-Header, PLAKETTE_VERSION und Stable tag müssen übereinstimmen"; exit 1; }
           grep -q "^## \[$TAG\]" CHANGELOG.md || { echo "::error::CHANGELOG.md hat keinen Abschnitt ## [$TAG]"; exit 1; }
 
-      - name: PHP-Syntax prüfen (7.4 und 8.3)
+      - name: PHP-Syntax prüfen (8.1 und 8.4)
         run: |
-          for v in 7.4 8.3; do
+          for v in 8.1 8.4; do
             docker run --rm -v "$PWD/src/plakette:/app" -w /app php:$v-cli sh -c "find . -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null" && echo "PHP $v ok" || exit 1
           done
 

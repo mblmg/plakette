@@ -9,6 +9,8 @@
  *  local_avatars  Generated initials avatars (SVG in uploads/plakette-avatars/) instead of Gravatar.
  *  comment_ip     New comments store a shortened IP address (IPv4: last octet 0, IPv6: first three groups).
  *  comment_note   Privacy notice with a link to the privacy policy above the comment form's submit button.
+ *  remove_services  List of service ids whose scripts, iframes, stylesheets and tracking pixels are stripped from every
+ *                 page („Dienst entfernen“, e.g. Google Analytics after the switch to the Plakette-Statistik).
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -363,6 +365,75 @@ class Plakette_Comment_Privacy {
 	}
 }
 
+class Plakette_Remove_Services {
+
+	public static function boot() {
+		if ( self::ids() ) {
+			Plakette_Html::add( 'remove_services', array( __CLASS__, 'transform' ), 12 );
+		}
+	}
+
+	/** @return string[] service ids to strip */
+	public static function ids() {
+		$v = Plakette_Modules::get( 'remove_services' );
+		return is_array( $v ) ? array_values( array_filter( array_map( 'strval', $v ) ) ) : array();
+	}
+
+	/** Adds services to the list (with undo). */
+	public static function add( array $ids, array &$undo ) {
+		$list = array_values( array_unique( array_merge( self::ids(), $ids ) ) );
+		sort( $list );
+		Plakette_Log::set_module( 'remove_services', $list, $undo );
+	}
+
+	public static function transform( $html ) {
+		$ids = self::ids();
+		if ( ! $ids ) {
+			return $html;
+		}
+		$is = function ( $url ) use ( $ids ) {
+			return '' !== $url && preg_match( '#^(https?:)?//#i', $url ) && in_array( Plakette_Services::for_url( $url ), $ids, true );
+		};
+		// Scripts (external and inline), keeping our own.
+		$out = preg_replace_callback(
+			'#<script\b([^>]*)>(.*?)</script>\s*#is',
+			function ( $m ) use ( $ids ) {
+				$open = '<script' . $m[1] . '>';
+				if ( 0 === strpos( strtolower( Plakette_Html::attr( $open, 'id' ) ), 'plakette' ) ) {
+					return $m[0];
+				}
+				$type = strtolower( Plakette_Html::attr( $open, 'type' ) );
+				if ( '' !== $type && ! in_array( $type, array( 'text/javascript', 'application/javascript', 'module', 'text/plain' ), true ) ) {
+					return $m[0];
+				}
+				$id = Plakette_Services::for_script( $open, $m[2] );
+				return ( $id && in_array( $id, $ids, true ) ) ? '' : $m[0];
+			},
+			$html
+		);
+		$html = is_string( $out ) ? $out : $html;
+		// Iframes, stylesheets/preconnects, pixels (also inside <noscript>).
+		$out = preg_replace_callback(
+			'#<iframe\b[^>]*>.*?</iframe>|<(?:link|img)\b[^>]*>#is',
+			function ( $m ) use ( $is ) {
+				preg_match( '#^<[a-z]+\b[^>]*>#i', $m[0], $open );
+				$tag = $open[0];
+				foreach ( array( 'src', 'href', 'data-src', 'data-plakette-src' ) as $a ) {
+					if ( $is( Plakette_Html::attr( $tag, $a ) ) ) {
+						return '';
+					}
+				}
+				return $m[0];
+			},
+			$html
+		);
+		$html = is_string( $out ) ? $out : $html;
+		$out  = preg_replace( '#<noscript>\s*</noscript>#i', '', $html );
+		return is_string( $out ) ? $out : $html;
+	}
+}
+
 add_action( 'plakette_boot', array( 'Plakette_Embeds', 'boot' ) );
+add_action( 'plakette_boot', array( 'Plakette_Remove_Services', 'boot' ) );
 add_action( 'plakette_boot', array( 'Plakette_Local_Avatars', 'boot' ) );
 add_action( 'plakette_boot', array( 'Plakette_Comment_Privacy', 'boot' ) );
