@@ -25,6 +25,7 @@ class Plakette_Rest {
 		register_rest_route( self::NS, '/undo', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'undo' ) ) );
 		register_rest_route( self::NS, '/log', $base + array( 'methods' => 'GET', 'callback' => array( __CLASS__, 'log' ) ) );
 		register_rest_route( self::NS, '/measure', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'measure' ) ) );
+		register_rest_route( self::NS, '/privacy-probe', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'privacy_probe' ) ) );
 		register_rest_route( self::NS, '/psi', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'psi' ) ) );
 		register_rest_route( self::NS, '/settings', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'save_settings' ) ) );
 		register_rest_route( self::NS, '/update-check', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'update_check' ) ) );
@@ -61,7 +62,92 @@ class Plakette_Rest {
 			'areas'    => Plakette_Auditor::areas(),
 			'settings' => Plakette_Settings::state(),
 			'updater'  => Plakette_Updater::state(),
+			'probe'    => get_option( 'plakette_privacy_probe', null ),
+			'probeSetup' => self::probe_setup(),
+			'stats'    => class_exists( 'Plakette_Stats' ) ? Plakette_Stats::summary() : null,
 		);
+	}
+
+	/** What the browser probe needs: pages to visit, consent cookies to hide for a "first visit", current fingerprint. */
+	public static function probe_setup() {
+		$urls = array( home_url( '/' ) );
+		$ids  = get_posts(
+			array(
+				'post_type'      => array( 'post', 'page' ),
+				'post_status'    => 'publish',
+				'posts_per_page' => 3,
+				'orderby'        => 'modified',
+				'fields'         => 'ids',
+				'has_password'   => false,
+				'post__not_in'   => array_filter( array( (int) get_option( 'page_on_front' ) ) ),
+			)
+		);
+		foreach ( $ids as $id ) {
+			$urls[] = get_permalink( $id );
+		}
+		$probe = get_option( 'plakette_privacy_probe', null );
+		return array(
+			'urls'          => array_values( array_unique( array_filter( $urls ) ) ),
+			'consentCookie' => Plakette_Services::consent_cookie_pattern(),
+			'fresh'         => class_exists( 'Plakette_Privacy_Evidence' ) ? Plakette_Privacy_Evidence::probe_fresh( $probe ) : false,
+		);
+	}
+
+	/**
+	 * Result of the privacy measurement in the browser (admin.js › privacyProbe()): what a first visit stores and contacts.
+	 * Only names, hosts and the page are kept – never cookie values.
+	 */
+	public static function privacy_probe( WP_REST_Request $request ) {
+		$p    = (array) $request->get_json_params();
+		$own  = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$page = function ( $u ) {
+			$u = esc_url_raw( (string) $u );
+			return '' !== $u ? $u : home_url( '/' );
+		};
+		$name = function ( $v ) {
+			return substr( preg_replace( '/[^\x21-\x7E]/', '', (string) $v ), 0, 120 );
+		};
+		$data = array(
+			'time'      => time(),
+			'signature' => class_exists( 'Plakette_Consent' ) ? Plakette_Consent::signature() : '',
+			'pages'     => array(),
+			'cookies'   => array(),
+			'storage'   => array(),
+			'hosts'     => array(),
+			'errors'    => array(),
+		);
+		foreach ( array_slice( (array) ( $p['pages'] ?? array() ), 0, 10 ) as $u ) {
+			$data['pages'][] = $page( $u );
+		}
+		$seen = array();
+		foreach ( array_slice( (array) ( $p['cookies'] ?? array() ), 0, 200 ) as $c ) {
+			$n = $name( $c['name'] ?? '' );
+			if ( '' !== $n && ! isset( $seen[ 'c' . $n ] ) ) {
+				$seen[ 'c' . $n ]  = true;
+				$data['cookies'][] = array( 'name' => $n, 'page' => $page( $c['page'] ?? '' ) );
+			}
+		}
+		foreach ( array_slice( (array) ( $p['storage'] ?? array() ), 0, 200 ) as $st ) {
+			$area = in_array( $st['area'] ?? '', array( 'local', 'session', 'idb' ), true ) ? $st['area'] : 'local';
+			$k    = $name( $st['key'] ?? '' );
+			if ( '' !== $k && ! isset( $seen[ $area . $k ] ) ) {
+				$seen[ $area . $k ] = true;
+				$data['storage'][]  = array( 'area' => $area, 'key' => $k, 'page' => $page( $st['page'] ?? '' ) );
+			}
+		}
+		foreach ( array_slice( (array) ( $p['hosts'] ?? array() ), 0, 200 ) as $h ) {
+			$host = strtolower( preg_replace( '/[^a-z0-9.-]/i', '', (string) ( $h['host'] ?? '' ) ) );
+			if ( '' !== $host && $host !== $own && ! isset( $seen[ 'h' . $host ] ) ) {
+				$seen[ 'h' . $host ] = true;
+				$data['hosts'][]     = array( 'host' => $host, 'type' => sanitize_key( $h['type'] ?? '' ), 'page' => $page( $h['page'] ?? '' ) );
+			}
+		}
+		foreach ( array_slice( (array) ( $p['errors'] ?? array() ), 0, 5 ) as $err ) {
+			$data['errors'][] = sanitize_text_field( (string) $err );
+		}
+		update_option( 'plakette_privacy_probe', $data, false );
+		Plakette_Auditor::refresh( 'privacy_third_party' );
+		return rest_ensure_response( self::state( Plakette_Auditor::refresh( 'privacy_consent' ) ) );
 	}
 
 	public static function audit() {

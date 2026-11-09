@@ -169,54 +169,117 @@ class Plakette_Check_Post_Descriptions extends Plakette_Check {
 	public $fix_does  = 'Speichert die Beschreibungen (Vorschlag: der Anfang des Textes) und gibt sie unsichtbar im Kopf jeder Seite aus. Neue Beiträge bekommen automatisch eine.';
 	public $kind      = 'items';
 
+	/** Meta field of the active SEO plugin for the description: [ meta key, plugin name ] or null (unknown plugin). */
+	public static function seo_field() {
+		$plugin = Plakette_Env::seo_plugin();
+		if ( '' === $plugin ) {
+			return array( '_plakette_desc', '' );
+		}
+		$map = array(
+			'Yoast SEO'         => '_yoast_wpseo_metadesc',
+			'Rank Math'         => 'rank_math_description',
+			'SEOPress'          => '_seopress_titles_desc',
+			'The SEO Framework' => '_genesis_description',
+			'Slim SEO'          => null,
+		);
+		return isset( $map[ $plugin ] ) && $map[ $plugin ] ? array( $map[ $plugin ], $plugin ) : null;
+	}
+
+	/** Does the SEO plugin fill descriptions of this post type from a template? */
+	private static function has_template( $post_type ) {
+		$plugin = Plakette_Env::seo_plugin();
+		if ( 'Yoast SEO' === $plugin ) {
+			$t = (array) get_option( 'wpseo_titles', array() );
+			return ! empty( $t[ 'metadesc-' . $post_type ] );
+		}
+		if ( 'Rank Math' === $plugin ) {
+			$t = (array) get_option( 'rank-math-options-titles', array() );
+			return ! empty( $t[ 'pt_' . $post_type . '_description' ] );
+		}
+		if ( 'SEOPress' === $plugin ) {
+			$t = (array) get_option( 'seopress_titles_option_name', array() );
+			return ! empty( $t['seopress_titles_single_titles'][ $post_type ]['description'] );
+		}
+		return false;
+	}
+
 	public function run( Plakette_Context $ctx ) {
-		$samples = $ctx->samples();
-		$missing = 0;
-		foreach ( $samples as $facts ) {
-			if ( '' === (string) $facts['description'] ) {
-				++$missing;
-			}
+		$posts = $ctx->posts();
+		if ( ! $posts ) {
+			return $this->skip( __( 'Noch keine veröffentlichten Beiträge oder Seiten.', 'plakette' ) );
 		}
-		if ( ! $samples ) {
-			if ( ! $ctx->posts() ) {
-				return $this->skip( __( 'Noch keine veröffentlichten Beiträge oder Seiten.', 'plakette' ) );
-			}
-			if ( Plakette_Modules::on( 'meta_desc' ) && ! Plakette_Env::seo_plugin() ) {
-				return $this->pass( __( 'Plakette gibt für alle Seiten eine Beschreibung aus.', 'plakette' ) );
-			}
-		} elseif ( ! $missing ) {
-			return $this->pass( sprintf( __( '%d zufällig geprüfte Seiten haben eine Beschreibung.', 'plakette' ), count( $samples ) ) );
+		$field  = self::seo_field();
+		$plugin = Plakette_Env::seo_plugin();
+		if ( '' === $plugin && Plakette_Modules::on( 'meta_desc' ) ) {
+			return $this->pass( __( 'Plakette gibt für alle Seiten eine Beschreibung aus (eigene oder aus dem Textanfang).', 'plakette' ) );
 		}
-		if ( Plakette_Env::seo_plugin() ) {
+		if ( null === $field ) {
+			// Unknown storage: judge by what the pages really output.
+			$samples = $ctx->samples();
+			$missing = array();
+			foreach ( $samples as $id => $facts ) {
+				if ( '' === (string) $facts['description'] ) {
+					$missing[] = array( 'label' => get_the_title( $id ), 'url' => (string) get_edit_post_link( $id, 'raw' ) );
+				}
+			}
+			if ( ! $missing ) {
+				return $this->pass( sprintf( __( '%d geprüfte Seiten haben eine Beschreibung.', 'plakette' ), count( $samples ) ) );
+			}
 			return $this->fail(
-				sprintf( __( '%1$d von %2$d geprüften Seiten haben keine Beschreibung.', 'plakette' ), $missing, count( $samples ) ),
-				array( 'kind' => 'auto', 'blocked' => sprintf( __( 'Trage die Beschreibungen im Bearbeitungsfenster jedes Beitrags bei %s ein.', 'plakette' ), Plakette_Env::seo_plugin() ) )
+				sprintf( __( '%1$d von %2$d geprüften Seiten haben keine Beschreibung.', 'plakette' ), count( $missing ), count( $samples ) ),
+				array(
+					'kind'    => 'none',
+					'blocked' => sprintf( __( 'Trage die Beschreibungen im Bearbeitungsfenster bei %s ein – die Links führen direkt dorthin.', 'plakette' ), $plugin ),
+					'links'   => $missing,
+				)
 			);
 		}
 		$items = array();
-		foreach ( array_slice( $ctx->posts(), 0, 200 ) as $post ) {
-			if ( (int) get_option( 'page_on_front' ) === $post->ID || get_post_meta( $post->ID, '_plakette_desc', true ) ) {
+		$total = 0;
+		foreach ( $posts as $post ) {
+			if ( (int) get_option( 'page_on_front' ) === $post->ID && '' === $plugin ) {
+				continue; // the home page has its own check
+			}
+			if ( '' !== $plugin && self::has_template( $post->post_type ) ) {
 				continue;
 			}
-			$items[] = array(
-				'id'    => 'post:' . $post->ID,
-				'label' => get_the_title( $post ),
-				'sub'   => 'page' === $post->post_type ? __( 'Seite', 'plakette' ) : __( 'Beitrag', 'plakette' ),
-				'value' => Plakette_Modules::generate_description( $post->ID ),
-				'link'  => get_permalink( $post ),
-			);
+			if ( '' !== trim( (string) get_post_meta( $post->ID, $field[0], true ) ) ) {
+				continue;
+			}
+			++$total;
+			if ( count( $items ) < 200 ) {
+				$items[] = array(
+					'id'    => 'post:' . $post->ID,
+					'label' => get_the_title( $post ) ? get_the_title( $post ) : __( '(ohne Titel)', 'plakette' ),
+					'sub'   => ( 'page' === $post->post_type ? __( 'Seite', 'plakette' ) : __( 'Beitrag', 'plakette' ) ) . ' · ' . wp_date( 'd.m.Y', strtotime( $post->post_date_gmt . ' UTC' ) ),
+					'value' => Plakette_Modules::generate_description( $post->ID ),
+					'link'  => get_permalink( $post ),
+					'edit'  => (string) get_edit_post_link( $post->ID, 'raw' ),
+				);
+			}
+		}
+		if ( ! $total ) {
+			return $this->pass( sprintf( __( 'Alle %d Beiträge und Seiten haben eine Beschreibung.', 'plakette' ), count( $posts ) ) );
+		}
+		$extra = array(
+			'items'      => $items,
+			'item_field' => array( 'label' => __( 'Beschreibung (120–155 Zeichen)', 'plakette' ), 'max' => 160, 'multiline' => true ),
+		);
+		if ( '' !== $plugin ) {
+			$extra['fix_does'] = sprintf( __( 'Speichert die Beschreibungen direkt in %s – genau dort, wo du sie sonst im Bearbeitungsfenster einträgst. Vorschlag ist jeweils der Anfang des Textes; du kannst ihn hier ändern.', 'plakette' ), $plugin );
 		}
 		return $this->fail(
-			$samples ? sprintf( __( '%1$d von %2$d geprüften Seiten haben keine Beschreibung.', 'plakette' ), $missing, count( $samples ) ) : __( 'Keine Beschreibungen gefunden.', 'plakette' ),
-			array(
-				'items'      => $items,
-				'item_field' => array( 'label' => __( 'Beschreibung (120–155 Zeichen)', 'plakette' ), 'max' => 160, 'multiline' => true ),
-			)
+			sprintf( _n( '%1$d von %2$d Beiträgen und Seiten hat keine Beschreibung.', '%1$d von %2$d Beiträgen und Seiten haben keine Beschreibung.', $total, 'plakette' ), $total, count( $posts ) ),
+			$extra
 		);
 	}
 
 	public function fix( array $req, array &$undo ) {
-		if ( ! Plakette_Modules::on( 'meta_desc' ) ) {
+		$field = self::seo_field();
+		if ( null === $field ) {
+			return new WP_Error( 'plakette_desc', __( 'Dein SEO-Plugin speichert Beschreibungen an einer Stelle, die Plakette nicht kennt.', 'plakette' ) );
+		}
+		if ( '_plakette_desc' === $field[0] && ! Plakette_Modules::on( 'meta_desc' ) ) {
 			Plakette_Log::set_module( 'meta_desc', true, $undo );
 		}
 		$done = 0;
@@ -226,7 +289,7 @@ class Plakette_Check_Post_Descriptions extends Plakette_Check {
 			}
 			$value = trim( preg_replace( '/\s+/', ' ', sanitize_textarea_field( isset( $item['value'] ) ? $item['value'] : '' ) ) );
 			if ( '' !== $value ) {
-				Plakette_Log::set_postmeta( (int) $m[1], '_plakette_desc', $value, $undo );
+				Plakette_Log::set_postmeta( (int) $m[1], $field[0], $value, $undo );
 				++$done;
 			}
 		}

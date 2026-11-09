@@ -18,6 +18,7 @@ $plk_video = wp_insert_post(
 		'post_content'   => "<!-- wp:paragraph -->\n<p>Im Video zeigen wir, wie eine dreistöckige Hochzeitstorte entsteht.</p>\n<!-- /wp:paragraph -->\n\n"
 			. "<!-- wp:embed {\"url\":\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\",\"type\":\"video\",\"providerNameSlug\":\"youtube\",\"responsive\":true,\"className\":\"wp-embed-aspect-16-9 wp-has-aspect-ratio\"} -->\n<figure class=\"wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio\"><div class=\"wp-block-embed__wrapper\">\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n</div></figure>\n<!-- /wp:embed -->\n\n"
 			. "<!-- wp:html -->\n<iframe width=\"560\" height=\"315\" src=\"https://www.youtube.com/embed/dQw4w9WgXcQ\" title=\"YouTube video player\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>\n<!-- /wp:html -->\n\n"
+			. "<!-- wp:html -->\n<img src=\"https://vg08.met.vgwort.de/na/0123456789abcdef0123456789abcdef\" width=\"1\" height=\"1\" alt=\"\">\n<!-- /wp:html -->\n\n"
 			. "<!-- wp:heading -->\n<h2 class=\"wp-block-heading\">So finden Sie uns</h2>\n<!-- /wp:heading -->\n\n"
 			. "<!-- wp:html -->\n<iframe src=\"https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2659.5!2d7.852!3d47.995!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1\" width=\"600\" height=\"450\" style=\"border:0;\" allowfullscreen=\"\" loading=\"lazy\" referrerpolicy=\"no-referrer-when-downgrade\"></iframe>\n<!-- /wp:html -->",
 	)

@@ -12,13 +12,14 @@ abstract class Plakette_Privacy_Check extends Plakette_Check {
 	public $group = 'Fremde Server';
 
 	/** Merged Plakette_Services::detect() of the home page and the sample pages (+ where it was found). */
-	protected static function detect_all( Plakette_Context $ctx ) {
+	public static function detect_all( Plakette_Context $ctx ) {
 		$out = array();
 		foreach ( $ctx->all_html() as $post_id => $html ) {
 			foreach ( Plakette_Services::detect( $html ) as $id => $hit ) {
 				if ( ! isset( $out[ $id ] ) ) {
-					$out[ $id ] = array( 'blocked' => true, 'where' => array(), 'pages' => array() );
+					$out[ $id ] = array( 'blocked' => true, 'where' => array(), 'pages' => array(), 'all' => array() );
 				}
+				$out[ $id ]['all'][] = (int) $post_id;
 				$out[ $id ]['blocked'] = $out[ $id ]['blocked'] && $hit['blocked'];
 				$out[ $id ]['where']   = array_values( array_unique( array_merge( $out[ $id ]['where'], $hit['where'] ) ) );
 				if ( ! $hit['blocked'] ) {
@@ -29,17 +30,43 @@ abstract class Plakette_Privacy_Check extends Plakette_Check {
 		return $out;
 	}
 
-	protected static function service_name( $id ) {
+	public static function service_name( $id ) {
 		$s = Plakette_Services::get( $id );
 		return $s ? $s['name'] : $id;
 	}
 
-	protected static function page_title( $post_id ) {
+	/** Hosts that belong to a detected service (e.g. www.google.com of a Maps iframe): host => service id. */
+	public static function service_hosts( Plakette_Context $ctx ) {
+		$out = array();
+		foreach ( self::detect_all( $ctx ) as $id => $hit ) {
+			foreach ( $hit['where'] as $w ) {
+				$out[ strtolower( $w ) ] = $id;
+			}
+		}
+		return $out;
+	}
+
+	/** Comments shown or possible somewhere. */
+	public static function comments_in_use() {
+		return self::comments_active();
+	}
+
+	/** "Title (/path/)" of a checked page. */
+	public static function page_label( $post_id ) {
+		if ( ! $post_id ) {
+			return __( 'Startseite', 'plakette' );
+		}
+		$path = (string) wp_parse_url( (string) get_permalink( $post_id ), PHP_URL_PATH );
+		$q    = (string) wp_parse_url( (string) get_permalink( $post_id ), PHP_URL_QUERY );
+		return self::page_title( $post_id ) . ' (' . $path . ( '' !== $q ? '?' . $q : '' ) . ')';
+	}
+
+	public static function page_title( $post_id ) {
 		return $post_id ? wp_strip_all_tags( get_the_title( $post_id ) ) : __( 'Startseite', 'plakette' );
 	}
 
 	/** Media services embedded in post content: post id => service ids (iframes, embed blocks, oEmbed URLs). */
-	protected static function media_in_posts( Plakette_Context $ctx ) {
+	public static function media_in_posts( Plakette_Context $ctx ) {
 		$out = array();
 		foreach ( $ctx->posts() as $post ) {
 			$c = (string) $post->post_content;
@@ -130,7 +157,7 @@ class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 			return __( 'Vorschaubild mit Klick zum Laden (Prüfpunkt „Videos und Karten erst nach Klick“)', 'plakette' );
 		}
 		if ( in_array( $category, array( 'statistics', 'marketing' ), true ) ) {
-			return __( 'Erst nach Einwilligung laden (Prüfpunkt „Fremde Dienste starten erst nach Einwilligung“ unter Sicherheit)', 'plakette' );
+			return __( 'Ersetzen oder entfernen – siehe Prüfpunkt „Kein Cookie-Banner nötig“ (So wird deine Website bannerfrei)', 'plakette' );
 		}
 		return __( 'Prüfen, ob nötig; sonst lokal einbinden oder erst nach Einwilligung laden', 'plakette' );
 	}
@@ -146,7 +173,22 @@ class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 				$hosts[ $h ] = isset( $hosts[ $h ] ) ? array_values( array_unique( array_merge( $hosts[ $h ], $types ) ) ) : $types;
 			}
 		}
+		// What a real browser contacted (browser probe), if it is up to date.
+		$probe = Plakette_Privacy_Evidence::probe();
+		if ( Plakette_Privacy_Evidence::probe_fresh( $probe ) ) {
+			foreach ( (array) $probe['hosts'] as $h ) {
+				$hosts[ $h['host'] ] = array_values( array_unique( array_merge( isset( $hosts[ $h['host'] ] ) ? $hosts[ $h['host'] ] : array(), array( $h['type'] ) ) ) );
+			}
+		}
+		$own = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		unset( $hosts[ $own ] );
 		$notes   = array();
+		$extra   = array();
+		if ( isset( $found['vg-wort'] ) || array_filter( array_keys( $hosts ), function ( $h ) { return 'vg-wort' === Plakette_Services::for_url( $h ); } ) ) {
+			list( $text, $links ) = Plakette_Services::vgwort_note();
+			$extra['links']       = $links;
+			$vg_note              = $text;
+		}
 		$names   = array();
 		$handled = 0;
 		$seen    = array();
@@ -169,8 +211,12 @@ class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 			);
 			$notes[] = ( $where ? implode( ', ', array_slice( $where, 0, 2 ) ) : __( 'Skript im Seitenquelltext', 'plakette' ) ) . ' – ' . $s['name'] . ' – ' . self::remedy( $id, $s['category'] );
 		}
+		$known_hosts = self::service_hosts( $ctx );
 		foreach ( $hosts as $host => $types ) {
 			$id = Plakette_Services::for_url( $host );
+			if ( ! $id && isset( $known_hosts[ $host ] ) ) {
+				$id = $known_hosts[ $host ];
+			}
 			if ( $id ) {
 				$s = Plakette_Services::get( $id );
 				if ( isset( $seen[ $id ] ) || 'necessary' === $s['category'] || empty( $s['consent'] ) ) {
@@ -185,10 +231,16 @@ class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 			$notes[] = $host . ' – ' . __( 'unbekannter Dienst', 'plakette' ) . ' (' . implode( ', ', (array) $types ) . ') – ' . self::remedy( '', '' );
 		}
 		if ( ! $notes ) {
-			if ( $handled ) {
-				return $this->pass( sprintf( _n( '%d fremder Dienst wird erst nach Einwilligung geladen, sonst nur der eigene Server.', '%d fremde Dienste werden erst nach Einwilligung geladen, sonst nur der eigene Server.', $handled, 'plakette' ), $handled ) );
+			if ( isset( $vg_note ) ) {
+				$extra['notes'] = array( $vg_note );
 			}
-			return $this->pass( __( 'Deine Seite lädt alles vom eigenen Server.', 'plakette' ) );
+			if ( $handled ) {
+				return $this->pass( sprintf( _n( '%d fremder Dienst wird erst nach Einwilligung geladen, sonst nur der eigene Server.', '%d fremde Dienste werden erst nach Einwilligung geladen, sonst nur der eigene Server.', $handled, 'plakette' ), $handled ), $extra );
+			}
+			return $this->pass( isset( $vg_note ) ? __( 'Außer dem VG-Wort-Zählpixel lädt deine Seite alles vom eigenen Server.', 'plakette' ) : __( 'Deine Seite lädt alles vom eigenen Server.', 'plakette' ), $extra );
+		}
+		if ( isset( $vg_note ) ) {
+			$notes[] = $vg_note;
 		}
 		$names = array_values( array_unique( $names ) );
 		return $this->warn(
@@ -198,7 +250,7 @@ class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 				count( $names ),
 				implode( ', ', array_slice( $names, 0, 8 ) ) . ( count( $names ) > 8 ? ' …' : '' )
 			),
-			array( 'notes' => array_slice( $notes, 0, 20 ) )
+			array_merge( $extra, array( 'notes' => array_slice( $notes, 0, 20 ) ) )
 		);
 	}
 }
@@ -344,20 +396,23 @@ class Plakette_Privacy_Evidence {
 		$probe = self::probe();
 		$fresh = self::probe_fresh( $probe );
 		$e     = array(
+			'disputed' => array(),
 			'probe'    => $probe,
 			'fresh'    => $fresh,
 			'tool'     => Plakette_Modules::on( 'consent' ) ? 'Plakette' : Plakette_Services::consent_tool( $ctx->html() ),
 			'services' => array(),
 			'entries'  => array(),
 			'hosts'    => array(),
+			'checked'  => array(),
 		);
-		$add = function ( $id, $loads, $where, $src ) use ( &$e ) {
+		$add = function ( $id, $loads, $where, $src, $pages = array() ) use ( &$e ) {
 			if ( ! self::relevant( $id ) ) {
 				return;
 			}
 			if ( ! isset( $e['services'][ $id ] ) ) {
-				$e['services'][ $id ] = array( 'state' => 'held', 'where' => array(), 'src' => array() );
+				$e['services'][ $id ] = array( 'state' => 'held', 'where' => array(), 'src' => array(), 'pages' => array() );
 			}
+			$e['services'][ $id ]['pages'] = array_values( array_unique( array_merge( $e['services'][ $id ]['pages'], (array) $pages ) ) );
 			if ( $loads ) {
 				$e['services'][ $id ]['state'] = 'loads';
 			}
@@ -366,16 +421,39 @@ class Plakette_Privacy_Evidence {
 		};
 
 		// 3. HTML.
-		foreach ( Plakette_Privacy_Check::detect_pages( $ctx ) as $id => $hit ) {
-			$add( $id, ! $hit['blocked'], $hit['where'], 'html' );
+		$e['checked'] = array();
+		foreach ( array_keys( $ctx->all_html() ) as $pid ) {
+			$u              = $pid ? (string) get_permalink( $pid ) : home_url( '/' );
+			$q              = (string) wp_parse_url( $u, PHP_URL_QUERY );
+			$e['checked'][] = ( (string) wp_parse_url( $u, PHP_URL_PATH ) ?: '/' ) . ( '' !== $q ? '?' . $q : '' );
+		}
+		$e['disputed'] = array();
+		foreach ( Plakette_Privacy_Check::detect_all( $ctx ) as $id => $hit ) {
+			if ( ! empty( Plakette_Services::get( $id )['disputed'] ) ) {
+				$e['disputed'][ $id ] = array_map( array( 'Plakette_Privacy_Check', 'page_label' ), array_unique( $hit['all'] ) );
+			}
+			$add( $id, ! $hit['blocked'], $hit['where'], 'html', array_map( array( 'Plakette_Privacy_Check', 'page_label' ), array_unique( $hit['all'] ) ) );
+		}
+		// Embeds in post content (pages that were not crawled count too) – unless the two-click solution is on.
+		if ( ! Plakette_Modules::on( 'embeds' ) ) {
+			foreach ( Plakette_Privacy_Check::media_in_posts( $ctx ) as $pid => $ids ) {
+				foreach ( $ids as $id ) {
+					$add( $id, true, __( 'Beitragsinhalt', 'plakette' ), 'content', array( Plakette_Privacy_Check::page_label( $pid ) ) );
+				}
+			}
+		}
+		// Gravatar: comment avatars appear on every post with comments.
+		if ( get_option( 'show_avatars' ) && ! Plakette_Modules::on( 'local_avatars' ) && Plakette_Privacy_Check::comments_in_use() ) {
+			$add( 'gravatar', true, 'gravatar.com', 'comments', array( __( 'Beiträge mit Kommentaren', 'plakette' ) ) );
 		}
 		$own   = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
 		$hosts = (array) $ctx->facts()['hosts'];
 		foreach ( $ctx->samples() as $facts ) {
 			$hosts += isset( $facts['hosts'] ) ? (array) $facts['hosts'] : array();
 		}
+		$known_hosts = Plakette_Privacy_Check::service_hosts( $ctx );
 		foreach ( array_keys( $hosts ) as $host ) {
-			if ( '' === Plakette_Services::for_url( $host ) && $host !== $own ) {
+			if ( '' === Plakette_Services::for_url( $host ) && $host !== $own && ! isset( $known_hosts[ $host ] ) ) {
 				$e['hosts'][ $host ] = 'html';
 			}
 		}
@@ -383,34 +461,47 @@ class Plakette_Privacy_Evidence {
 		// 2. Server cookies.
 		$names = array();
 		foreach ( $ctx->cookies() as $name ) {
-			$names[ 'cookie|' . $name ] = array( 'cookie', $name, 'server' );
+			$names[ 'cookie|' . $name ] = array( 'cookie', $name, 'server', __( 'Startseite', 'plakette' ) );
 		}
+		$path = function ( $url ) {
+			$p = (string) wp_parse_url( (string) $url, PHP_URL_PATH );
+			$q = (string) wp_parse_url( (string) $url, PHP_URL_QUERY );
+			$q = trim( preg_replace( '/(^|&)plakette_[a-z]+=[^&]*/', '', $q ), '&' );
+			return ( '' === $p ? '/' : $p ) . ( '' !== $q ? '?' . $q : '' );
+		};
 
 		// 1. Browser.
 		if ( $fresh ) {
+			foreach ( (array) $probe['pages'] as $u ) {
+				$e['checked'][] = $path( $u );
+			}
 			foreach ( (array) $probe['cookies'] as $c ) {
-				$names[ 'cookie|' . $c['name'] ] = array( 'cookie', $c['name'], 'browser' );
+				$names[ 'cookie|' . $c['name'] ] = array( 'cookie', $c['name'], 'browser', $path( $c['page'] ) );
 			}
 			foreach ( (array) $probe['storage'] as $s ) {
-				$names[ $s['area'] . '|' . $s['key'] ] = array( $s['area'], $s['key'], 'browser' );
+				$names[ $s['area'] . '|' . $s['key'] ] = array( $s['area'], $s['key'], 'browser', $path( $s['page'] ) );
 			}
 			foreach ( (array) $probe['hosts'] as $h ) {
 				$id = Plakette_Services::for_url( $h['host'] );
+				if ( $id && ! empty( Plakette_Services::get( $id )['disputed'] ) ) {
+					$e['disputed'][ $id ][] = $path( $h['page'] );
+				}
 				if ( $id ) {
-					$add( $id, true, $h['host'], 'browser' );
-				} elseif ( strtolower( $h['host'] ) !== $own ) {
+					$add( $id, true, $h['host'], 'browser', array( $path( $h['page'] ) ) );
+				} elseif ( strtolower( $h['host'] ) !== $own && ! isset( $known_hosts[ strtolower( $h['host'] ) ] ) ) {
 					$e['hosts'][ $h['host'] ] = 'browser';
 				}
 			}
 		}
 		foreach ( $names as $n ) {
 			$kb             = Plakette_Services::classify_storage( $n[1] );
-			$e['entries'][] = array( 'type' => $n[0], 'name' => $n[1], 'src' => $n[2], 'kb' => $kb );
+			$e['entries'][] = array( 'type' => $n[0], 'name' => $n[1], 'src' => $n[2], 'kb' => $kb, 'page' => $n[3] );
 			// A cookie of a known service proves that the service runs without consent.
 			if ( 'no' === $kb['necessary'] && '' !== $kb['service'] ) {
-				$add( $kb['service'], true, ( 'cookie' === $n[0] ? 'Cookie ' : 'Speicher ' ) . $n[1], 'cookie' );
+				$add( $kb['service'], true, ( 'cookie' === $n[0] ? 'Cookie ' : 'Speicher ' ) . $n[1], 'cookie', array( $n[3] ) );
 			}
 		}
+		$e['checked'] = array_values( array_unique( $e['checked'] ) );
 		// Two-click placeholders are consent per embed – they do not need a banner.
 		foreach ( $e['services'] as $id => $s ) {
 			$cat = Plakette_Services::get( $id )['category'];
@@ -660,28 +751,81 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 		return $a;
 	}
 
+	/** Pages that need consent: path => [ label, service names ]. */
+	private static function per_page( array $e, array $ids ) {
+		$out = array();
+		foreach ( $ids as $id ) {
+			foreach ( (array) $e['services'][ $id ]['pages'] as $label ) {
+				$key = preg_match( '/\(([^()]*)\)$/', $label, $m ) ? $m[1] : $label;
+				if ( ! isset( $out[ $key ] ) || strlen( $label ) > strlen( $out[ $key ][0] ) ) {
+					$out[ $key ] = array( $label, isset( $out[ $key ] ) ? $out[ $key ][1] : array() );
+				}
+				$out[ $key ][1][] = self::service_name( $id );
+			}
+		}
+		foreach ( $out as $k => $v ) {
+			$out[ $k ][1] = array_values( array_unique( $v[1] ) );
+		}
+		return $out;
+	}
+
+	private static function pages_text( array $e, array $ids ) {
+		$pages = self::per_page( $e, $ids );
+		if ( ! $pages ) {
+			return '';
+		}
+		$total = max( count( $pages ), count( (array) $e['checked'] ) );
+		// Services on every checked page are named once; the rest per page.
+		$every = null;
+		foreach ( $pages as $p ) {
+			$every = null === $every ? $p[1] : array_values( array_intersect( $every, $p[1] ) );
+		}
+		$every = count( $pages ) >= $total && count( $pages ) > 1 ? (array) $every : array();
+		$text  = ' ' . sprintf( /* translators: 1: pages, 2: checked pages */ __( 'Einwilligung nötig auf %1$d von %2$d geprüften Seiten.', 'plakette' ), count( $pages ), $total );
+		if ( $every ) {
+			$text .= ' ' . sprintf( __( 'Auf jeder Seite: %s.', 'plakette' ), implode( ', ', $every ) );
+		}
+		$list = array();
+		foreach ( $pages as $p ) {
+			$rest = array_values( array_diff( $p[1], $every ) );
+			if ( $rest ) {
+				$list[] = $p[0] . ': ' . implode( ', ', $rest );
+			}
+		}
+		if ( $list ) {
+			$text .= ' ' . ( $every ? __( 'Zusätzlich', 'plakette' ) : __( 'Seiten', 'plakette' ) ) . ' – ' . implode( '; ', array_slice( $list, 0, 5 ) ) . ( count( $list ) > 5 ? ' …' : '' ) . '.';
+		}
+		return $text;
+	}
+
 	private static function names( array $ids ) {
 		return implode( ', ', array_map( array( 'Plakette_Privacy_Check', 'service_name' ), array_values( array_unique( $ids ) ) ) );
 	}
 
 	/** Items (measures) for a list of services. */
-	private static function items( array $ids, $with_banner, $banner_checked ) {
+	private static function items( array $e, array $ids, $with_banner, $banner_checked ) {
 		$items = array();
+		$pages = array();
 		foreach ( array_unique( $ids ) as $id ) {
 			$m = Plakette_Privacy_Evidence::measure( $id );
 			if ( empty( $m['key'] ) ) {
 				continue;
 			}
-			if ( isset( $items[ $m['key'] ] ) ) {
-				$items[ $m['key'] ]['sub'] = trim( $items[ $m['key'] ]['sub'] . ' ' . self::service_name( $id ) );
-				continue;
+			foreach ( (array) $e['services'][ $id ]['pages'] as $label ) {
+				$pages[ $m['key'] ][] = preg_match( '/\(([^()]*)\)$/', $label, $mm ) ? $mm[1] : $label;
 			}
-			$items[ $m['key'] ] = array(
-				'id'      => $m['key'],
-				'label'   => $m['label'],
-				'sub'     => trim( ( isset( $m['sub'] ) ? $m['sub'] : '' ) ),
-				'checked' => ! empty( $m['checked'] ),
-			);
+			if ( ! isset( $items[ $m['key'] ] ) ) {
+				$items[ $m['key'] ] = array(
+					'id'      => $m['key'],
+					'label'   => $m['label'],
+					'sub'     => trim( ( isset( $m['sub'] ) ? $m['sub'] : '' ) ),
+					'checked' => ! empty( $m['checked'] ),
+				);
+			}
+		}
+		foreach ( $pages as $key => $list ) {
+			$list                 = array_values( array_unique( $list ) );
+			$items[ $key ]['sub'] = trim( $items[ $key ]['sub'] . ' ' . __( 'Betrifft:', 'plakette' ) . ' ' . implode( ', ', array_slice( $list, 0, 6 ) ) . ( count( $list ) > 6 ? ' …' : '' ) );
 		}
 		if ( $with_banner ) {
 			$items['banner'] = array(
@@ -720,6 +864,18 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 		foreach ( $a['advice'] as $advice ) {
 			$notes[] = __( 'So geht es ohne Banner:', 'plakette' ) . ' ' . $advice;
 		}
+		$links = array();
+		if ( isset( $e['disputed']['vg-wort'] ) ) {
+			list( $text, $links ) = Plakette_Services::vgwort_note();
+			$pages                = array_values( array_unique( $e['disputed']['vg-wort'] ) );
+			$notes[]              = $text . ' ' . __( 'Gefunden auf:', 'plakette' ) . ' ' . implode( ', ', array_slice( $pages, 0, 5 ) ) . '.';
+		}
+		$with = function ( array $extra ) use ( $links ) {
+			if ( $links ) {
+				$extra['links'] = $links;
+			}
+			return $extra;
+		};
 
 		// Nothing needs consent.
 		if ( ! $need ) {
@@ -741,18 +897,18 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 				}
 				return $this->warn(
 					sprintf( __( 'Dein Cookie-Banner (%s) ist überflüssig: Beim ersten Besuch wird nichts gespeichert und kein fremder Dienst geladen, der eine Einwilligung braucht. Banner nerven Besucher und kosten Anfragen und Umsatz – schalte ihn ab.', 'plakette' ), $tool ),
-					$extra
+					$with( $extra )
 				);
 			}
 			if ( $a['review'] ) {
 				return $this->warn(
 					sprintf( __( 'Wahrscheinlich kein Cookie-Banner nötig – prüfe aber diese Einträge: %s.', 'plakette' ), implode( ', ', array_unique( $a['review'] ) ) ),
-					array( 'kind' => 'none', 'notes' => $notes, 'problem' => __( 'Fast kein Cookie-Banner nötig – ein paar Einträge prüfen', 'plakette' ) )
+					$with( array( 'kind' => 'none', 'notes' => $notes, 'problem' => __( 'Fast kein Cookie-Banner nötig – ein paar Einträge prüfen', 'plakette' ) ) )
 				);
 			}
 			return $this->pass(
 				__( 'Kein Cookie-Banner nötig: Beim ersten Besuch werden keine unnötigen Cookies oder Speicher-Einträge angelegt, und es laden keine fremden Dienste, die eine Einwilligung brauchen.', 'plakette' ),
-				array( 'notes' => $notes )
+				$with( array( 'notes' => $notes ) )
 			);
 		}
 
@@ -760,7 +916,7 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 		if ( ! $a['loads'] ) {
 			$avoid = array_values( array_intersect( $a['avoidable'], $a['held'] ) );
 			if ( $avoid ) {
-				$items   = self::items( $avoid, false, false );
+				$items   = self::items( $e, $avoid, false, false );
 				$items[] = array(
 					'id'      => 'off',
 					'label'   => __( 'Danach den Cookie-Banner ausschalten', 'plakette' ),
@@ -768,25 +924,27 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 					'checked' => ! $keep_banner,
 				);
 				return $this->warn(
-					sprintf( __( 'Dein Cookie-Banner (%1$s) hält %2$s zurück. Das lässt sich ohne Banner lösen.', 'plakette' ), $tool, self::names( $a['held'] ) ) . $without,
-					array( 'items' => $items, 'notes' => $notes, 'problem' => __( 'Dein Cookie-Banner lässt sich vermeiden', 'plakette' ) )
+					sprintf( __( 'Dein Cookie-Banner (%1$s) hält %2$s zurück. Das lässt sich ohne Banner lösen.', 'plakette' ), $tool, self::names( $a['held'] ) ) . self::pages_text( $e, $a['held'] ) . $without,
+					$with( array( 'items' => $items, 'notes' => $notes, 'problem' => __( 'Dein Cookie-Banner lässt sich vermeiden', 'plakette' ) ) )
 				);
 			}
 			return $this->pass(
-				sprintf( __( 'Ein Cookie-Banner ist nötig und aktiv (%1$s): Er hält %2$s zurück, bis Besucher zustimmen.', 'plakette' ), $tool, self::names( $a['held'] ) ) . $without,
-				array( 'notes' => $notes, 'title' => __( 'Cookie-Banner nötig und aktiv', 'plakette' ) )
+				sprintf( __( 'Ein Cookie-Banner ist nötig und aktiv (%1$s): Er hält %2$s zurück, bis Besucher zustimmen.', 'plakette' ), $tool, self::names( $a['held'] ) ) . self::pages_text( $e, $a['held'] ) . $without,
+				$with( array( 'notes' => $notes, 'title' => __( 'Cookie-Banner nötig und aktiv', 'plakette' ) ) )
 			);
 		}
 
 		// Something loads without consent.
 		$avoid       = array_values( array_intersect( $a['avoidable'], $need ) );
 		$keep_loads  = array_values( array_intersect( $keep_banner, $a['loads'] ) );
-		$items       = self::items( array_merge( $avoid, $keep ), (bool) $keep_banner || (bool) array_intersect( $avoid, $need ), (bool) $keep_loads && 'Plakette' !== $tool );
+		$items       = self::items( $e, array_merge( $avoid, $keep ), (bool) $keep_banner || (bool) array_intersect( $avoid, $need ), (bool) $keep_loads && 'Plakette' !== $tool );
 		$detail      = sprintf( __( 'Ohne Einwilligung laden: %s.', 'plakette' ), self::names( $a['loads'] ) );
-		if ( $avoid ) {
-			$detail .= ' ' . sprintf( __( 'Vermeidbar mit den Maßnahmen unten: %s.', 'plakette' ), self::names( $avoid ) );
+		if ( $avoid && ! $keep ) {
+			$detail .= ' ' . __( 'Das lässt sich alles ohne Banner lösen – mit den Maßnahmen unten.', 'plakette' );
+		} elseif ( $avoid ) {
+			$detail .= ' ' . sprintf( __( 'Ohne Banner lösbar mit den Maßnahmen unten: %s.', 'plakette' ), self::names( $avoid ) );
 		}
-		$detail .= $without;
+		$detail .= self::pages_text( $e, $need ) . $without;
 		$extra = array( 'notes' => $notes );
 		if ( ! $avoid ) {
 			$extra['problem'] = __( 'Ein Cookie-Banner ist nötig', 'plakette' );
@@ -795,7 +953,7 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 			$extra['kind'] = 'none';
 		}
 		$extra['items'] = $items;
-		return $this->fail( $detail, $extra );
+		return $this->fail( $detail, $with( $extra ) );
 	}
 
 	public function fix( array $req, array &$undo ) {

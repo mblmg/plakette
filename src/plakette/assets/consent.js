@@ -19,6 +19,18 @@
 	var reopen = d.querySelector('.plk-cc-reopen');
 	var lastFocus = null;
 
+	/** Pages without anything held back carry the banner only as <template> – mount it when settings are opened. */
+	function mount() {
+		if (root) { return root; }
+		var t = d.getElementById('plakette-consent-tpl');
+		if (!t || !t.content) { return null; }
+		d.body.insertBefore(t.content.cloneNode(true), d.body.firstChild);
+		root = d.getElementById('plakette-consent');
+		reopen = d.querySelector('.plk-cc-reopen');
+		if (reopen) { reopen.parentNode.removeChild(reopen); reopen = null; }
+		return root;
+	}
+
 	function read() {
 		var m = d.cookie.match(/(?:^|;\s*)plakette_consent=([^;]*)/);
 		if (!m) { return null; }
@@ -209,7 +221,7 @@
 		if (!t || !t.closest) { return; }
 
 		var opener = t.closest('[data-plakette-consent-open],a[href="#plakette-consent"]');
-		if (opener && root) {
+		if (opener && mount()) {
 			e.preventDefault();
 			show(true, true);
 			return;
@@ -252,11 +264,13 @@
 	});
 
 	window.plaketteConsent = {
-		open: function () { show(true, true); },
+		open: function () { if (mount()) { show(true, true); } },
 		allowed: allowed
 	};
 
-	if (root && cfg) {
+	if (window.plaketteConsentOpen && mount()) {
+		show(true, true);
+	} else if (root && cfg) {
 		var o = current();
 		if (!o || !o.a) {
 			show(false, false);

@@ -196,26 +196,61 @@ class Plakette_Consent {
 		return is_string( $out ) ? $out : $html;
 	}
 
+	/**
+	 * Per page: the banner (and its script/styles) only appears where this page's output really holds something back
+	 * for consent. Two-click placeholders do not count – the placeholder itself asks (one click = consent for that embed).
+	 * Pages that only contain a „Cookie-Einstellungen“ link get the banner as an inert <template> plus a tiny loader,
+	 * so withdrawing consent stays possible everywhere without loading anything up front.
+	 */
 	public static function transform( $html ) {
 		$found = array();
 		$html  = self::block_scripts( $html, $found );
-		// Iframes held back by the two-click placeholders also belong to the banner (category media).
-		if ( preg_match_all( '#data-plakette-embed="([a-z0-9-]+)"#', $html, $m ) ) {
-			foreach ( $m[1] as $id ) {
-				if ( self::handles( $id ) ) {
+		if ( preg_match_all( '#<script\b[^>]*data-plakette-consent=[^>]*>#i', $html, $m ) ) {
+			foreach ( $m[0] as $tag ) {
+				$id = Plakette_Html::attr( $tag, 'data-plakette-service' );
+				if ( '' !== $id ) {
 					$found[ $id ] = true;
 				}
 			}
 		}
+		$embeds = array();
+		if ( preg_match_all( '#data-plakette-embed="([a-z0-9-]+)"#', $html, $m ) ) {
+			foreach ( $m[1] as $id ) {
+				if ( self::handles( $id ) ) {
+					$embeds[ $id ] = true;
+				}
+			}
+		}
 		$known = self::services();
-		$new   = array_diff( array_keys( $found ), $known );
+		$new   = array_diff( array_keys( $found + $embeds ), $known );
 		if ( $new ) {
 			self::$new = $new;
 			add_action( 'shutdown', array( __CLASS__, 'store_new' ), 50 );
 		}
-		$ids  = array_values( array_unique( array_merge( $known, array_keys( $found ) ) ) );
-		$html = self::insert_banner( $html, $ids );
-		return self::assets( $html );
+		$ids = array_values( array_unique( array_merge( $known, array_keys( $found + $embeds ) ) ) );
+		if ( $found ) {
+			$html = self::insert_banner( $html, $ids );
+			return self::assets( $html );
+		}
+		if ( preg_match( '#data-plakette-consent-open|href=["\']\#plakette-consent["\']#', $html ) ) {
+			$html = self::insert_template( $html, $ids );
+		}
+		return $html;
+	}
+
+	/** Banner as <template> + lazy loader for pages that need no banner but have a „Cookie-Einstellungen“ link. */
+	private static function insert_template( $html, array $ids ) {
+		if ( false !== strpos( $html, 'id="plakette-consent-tpl"' ) || false !== strpos( $html, 'id="plakette-consent"' ) ) {
+			return $html;
+		}
+		list( $config, $markup ) = self::banner_parts( $ids );
+		$out = $config . '<template id="plakette-consent-tpl">' . $markup . '</template>';
+		if ( false === strpos( $html, 'id="plakette-consent-js"' ) ) {
+			$css  = PLAKETTE_URL . 'assets/consent.css?ver=' . rawurlencode( PLAKETTE_VERSION . '-' . self::mtime( 'consent.css' ) );
+			$js   = PLAKETTE_URL . 'assets/consent.js?ver=' . rawurlencode( PLAKETTE_VERSION . '-' . self::mtime( 'consent.js' ) );
+			$out .= '<script id="plakette-consent-loader">(function(d){d.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("[data-plakette-consent-open],a[href=\"#plakette-consent\"]");if(!a||window.plaketteConsent||window.plaketteConsentOpen)return;e.preventDefault();window.plaketteConsentOpen=1;var l=d.createElement("link");l.rel="stylesheet";l.href=' . wp_json_encode( esc_url_raw( $css ) ) . ';d.head.appendChild(l);var s=d.createElement("script");s.src=' . wp_json_encode( esc_url_raw( $js ) ) . ';s.id="plakette-consent-js";d.body.appendChild(s);});})(document);</script>';
+		}
+		return Plakette_Html::append_to_body( $html, $out );
 	}
 
 	/** A page showed services the banner did not name yet: remember them (new version = visitors are asked again). */
@@ -292,6 +327,11 @@ class Plakette_Consent {
 
 	/** Banner markup – identical for every visitor; the script decides whether it is shown. */
 	public static function banner( array $ids ) {
+		return implode( '', self::banner_parts( $ids ) );
+	}
+
+	/** @return string[] [ config script, banner + reopen button ] */
+	public static function banner_parts( array $ids ) {
 		$by_cat = array();
 		foreach ( $ids as $id ) {
 			$s = Plakette_Services::get( $id );
@@ -336,8 +376,8 @@ class Plakette_Consent {
 			$links[] = '<a href="' . esc_url( $imprint ) . '">' . esc_html__( 'Impressum', 'plakette' ) . '</a>';
 		}
 
-		$h  = '<script type="application/json" id="plakette-consent-config">' . wp_json_encode( $config ) . '</script>';
-		$h .= '<div id="plakette-consent" class="plk-cc" data-plakette-consent-root role="dialog" aria-modal="false" aria-labelledby="plk-cc-title" aria-describedby="plk-cc-text" hidden>';
+		$cfg = '<script type="application/json" id="plakette-consent-config">' . wp_json_encode( $config ) . '</script>';
+		$h   = '<div id="plakette-consent" class="plk-cc" data-plakette-consent-root role="dialog" aria-modal="false" aria-labelledby="plk-cc-title" aria-describedby="plk-cc-text" hidden>';
 		$h .= '<div class="plk-cc__box">';
 		$h .= '<h2 class="plk-cc__title" id="plk-cc-title" tabindex="-1">' . esc_html( self::text( 'title' ) ) . '</h2>';
 		$h .= '<p class="plk-cc__text" id="plk-cc-text">' . esc_html( self::text( 'text' ) ) . '</p>';
@@ -355,7 +395,7 @@ class Plakette_Consent {
 		$h .= '<button type="button" class="plk-cc-reopen" data-plakette-consent-open aria-label="' . esc_attr( self::text( 'link_label' ) ) . '" title="' . esc_attr( self::text( 'link_label' ) ) . '" hidden>';
 		$h .= '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5zm-3.5 7a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm-1 5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm6 1a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/></svg>';
 		$h .= '</button>';
-		return $h;
+		return array( $cfg, $h );
 	}
 }
 

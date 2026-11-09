@@ -15,7 +15,9 @@
 		opened: new Set(), // other rows the user opened
 		showPass: false,
 		showSkip: false,
-		busy: null, // 'audit' | 'all' | 'measure' | 'psi' | check id
+		busy: null, // 'audit' | 'all' | 'measure' | 'probe' | 'psi' | check id
+		probing: false,
+		probeStep: '',
 		progress: '',
 		drafts: {}, // check id → { value, items: { id: { value, checked } }, expanded }
 		stamp: false,
@@ -80,7 +82,7 @@
 	}
 
 	function setState( next ) {
-		[ 'report', 'measure', 'psi', 'log', 'history', 'psiKey', 'areas', 'settings', 'updater' ].forEach( ( k ) => {
+		[ 'report', 'measure', 'psi', 'log', 'history', 'psiKey', 'areas', 'settings', 'updater', 'probe', 'probeSetup', 'stats' ].forEach( ( k ) => {
 			if ( next && k in next ) {
 				S[ k ] = next[ k ];
 			}
@@ -105,7 +107,7 @@
 		if ( ! ui.drafts[ c.id ] ) {
 			const d = { value: c.input ? c.input.value || '' : '', items: {}, expanded: false };
 			( c.items || [] ).forEach( ( it ) => {
-				d.items[ it.id ] = { value: it.value || '', checked: true };
+				d.items[ it.id ] = { value: it.value || '', checked: it.checked !== false };
 			} );
 			ui.drafts[ c.id ] = d;
 		}
@@ -466,7 +468,7 @@
 				<input type="checkbox" ${ st.checked ? 'checked' : '' } data-pick="${ esc( it.id ) }" data-check="${ esc( c.id ) }" aria-label="${ esc( it.label ) } auswählen">
 				${ it.thumb ? `<img src="${ esc( it.thumb ) }" alt="" loading="lazy" width="48" height="48">` : '' }
 				<div class="plk-item-main">
-					<div class="plk-item-label">${ esc( it.label ) }${ it.link ? ` <a href="${ esc( it.link ) }" target="_blank" rel="noopener">ansehen<span class="screen-reader-text"> (neues Fenster)</span></a>` : '' }</div>
+					<div class="plk-item-label">${ esc( it.label ) }${ it.link ? ` <a href="${ esc( it.link ) }" target="_blank" rel="noopener">ansehen<span class="screen-reader-text"> (neues Fenster)</span></a>` : '' }${ it.edit ? ` <a href="${ esc( it.edit ) }" target="_blank" rel="noopener">bearbeiten<span class="screen-reader-text"> (neues Fenster)</span></a>` : '' }</div>
 					<div class="plk-item-sub">${ esc( it.sub || '' ) }</div>
 					${ input }
 				</div>
@@ -643,7 +645,7 @@
 	function render() {
 		const focusId = document.activeElement && document.activeElement.id;
 		const focusAction = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.action + '|' + ( document.activeElement.dataset.id || '' ) : '';
-		app.innerHTML = header() + instruments() + list() + logSection() + settingsSection();
+		app.innerHTML = header() + instruments() + privacyPanel() + list() + statsPanel() + logSection() + settingsSection();
 		let target = focusId ? document.getElementById( focusId ) : null;
 		if ( ! target && focusAction ) {
 			const [ a, id ] = focusAction.split( '|' );
@@ -901,6 +903,252 @@
 		return out;
 	}
 
+
+	/* ------------------------------------------------------------ privacy measurement (browser probe) */
+
+	function privacyPanel() {
+		const p = S.probe;
+		const fresh = S.probeSetup && S.probeSetup.fresh;
+		let summary = 'Noch nicht gemessen. Plakette öffnet deine Startseite und einige Unterseiten wie ein Erstbesucher – ohne Klick – und schaut nach, was der Browser speichert und welche fremden Server er kontaktiert. Das ist der Maßstab der Datenschutz-Aufsicht.';
+		if ( p && p.time ) {
+			summary = `Gemessen am ${ esc( when( p.time ) ) } auf ${ plural( ( p.pages || [] ).length, 'Seite', 'Seiten' ) }: <b>${ plural( ( p.cookies || [] ).length, 'neues Cookie', 'neue Cookies' ) }</b>, <b>${ plural( ( p.storage || [] ).length, 'Speicher-Eintrag', 'Speicher-Einträge' ) }</b>, <b>${ plural( ( p.hosts || [] ).length, 'fremder Server', 'fremde Server' ) }</b>.${ fresh ? '' : ' <span class="plk-stale">Seitdem hat sich etwas geändert – miss erneut.</span>' }`;
+		}
+		let details = '';
+		if ( p && p.time && ( ( p.cookies || [] ).length || ( p.storage || [] ).length || ( p.hosts || [] ).length ) ) {
+			const path = ( u ) => {
+				try {
+					const x = new URL( u );
+					return x.pathname + x.search.replace( /[?&]plakette_[a-z]+=[^&]*/g, '' );
+				} catch ( e ) {
+					return u;
+				}
+			};
+			const rows = [].concat(
+				( p.cookies || [] ).map( ( c ) => [ 'Cookie', c.name, path( c.page ) ] ),
+				( p.storage || [] ).map( ( st ) => [ { local: 'localStorage', session: 'sessionStorage', idb: 'IndexedDB' }[ st.area ] || st.area, st.key, path( st.page ) ] ),
+				( p.hosts || [] ).map( ( h ) => [ 'Fremder Server', h.host + ( h.type ? ' (' + h.type + ')' : '' ), path( h.page ) ] )
+			);
+			details = `<details class="plk-probe-raw"><summary>Rohdaten ansehen (${ rows.length })</summary><table class="plk-table"><thead><tr><th scope="col">Art</th><th scope="col">Name</th><th scope="col">Seite</th></tr></thead><tbody>${ rows.map( ( r ) => `<tr><td>${ esc( r[ 0 ] ) }</td><td><code>${ esc( r[ 1 ] ) }</code></td><td>${ esc( r[ 2 ] ) }</td></tr>` ).join( '' ) }</tbody></table><p class="plk-help">Die Bewertung jedes Eintrags steht beim Prüfpunkt „Kein Cookie-Banner nötig“.</p></details>`;
+		}
+		return `<section class="plk-panel plk-probe" aria-labelledby="plk-probe-h">
+			<div class="plk-panel-head">
+				<h2 id="plk-probe-h">Datenschutz-Messung: Braucht deine Website einen Cookie-Banner?</h2>
+				<div class="plk-actions">
+					<button class="plk-btn ${ p ? '' : 'is-primary' }" data-action="probe" ${ ui.busy ? 'disabled' : '' }>${ p ? 'Erneut messen' : 'Datenschutz-Messung starten' }</button>
+					${ byId( 'privacy_consent' ) ? '<button class="plk-btn is-quiet" data-action="jump" data-id="privacy_consent">Zum Ergebnis</button>' : '' }
+				</div>
+			</div>
+			<p class="plk-panel-note">${ summary }</p>
+			${ details }
+			${ ui.probing ? `<figure class="plk-phone plk-probe-frame"><div class="plk-phone-screen"><iframe title="Seite wird wie von einem Erstbesucher geladen" id="plk-probe-frame" width="390" height="600"></iframe></div><figcaption role="status">${ esc( ui.probeStep ) }</figcaption></figure>` : '' }
+		</section>`;
+	}
+
+	const sleep = ( t ) => new Promise( ( r ) => setTimeout( r, t ) );
+
+	function cookieMap() {
+		const out = {};
+		document.cookie.split( ';' ).forEach( ( part ) => {
+			const i = part.indexOf( '=' );
+			const name = ( i < 0 ? part : part.slice( 0, i ) ).trim();
+			if ( name ) {
+				out[ name ] = i < 0 ? '' : part.slice( i + 1 );
+			}
+		} );
+		return out;
+	}
+	function storageKeys( w, area ) {
+		const out = [];
+		try {
+			const st = w[ area + 'Storage' ];
+			for ( let i = 0; i < st.length; i++ ) {
+				out.push( st.key( i ) );
+			}
+		} catch ( e ) {}
+		return out;
+	}
+	async function idbNames( w ) {
+		try {
+			if ( w.indexedDB && w.indexedDB.databases ) {
+				return ( await w.indexedDB.databases() ).map( ( d ) => d.name );
+			}
+		} catch ( e ) {}
+		return [];
+	}
+	function killCookie( name ) {
+		const parts = location.hostname.split( '.' );
+		const paths = [ '/', location.pathname.replace( /\/[^/]*$/, '/' ) ];
+		paths.forEach( ( path ) => {
+			document.cookie = name + '=;max-age=0;path=' + path;
+			for ( let i = 0; i < parts.length - 1; i++ ) {
+				document.cookie = name + '=;max-age=0;path=' + path + ';domain=.' + parts.slice( i ).join( '.' );
+			}
+		} );
+	}
+
+	/** Third-party hosts from the resource timing of a window and its same-origin subframes. */
+	function frameHosts( w, page, out ) {
+		try {
+			w.performance.getEntriesByType( 'resource' ).forEach( ( r ) => {
+				let host = '';
+				try {
+					host = new URL( r.name ).hostname;
+				} catch ( e ) {}
+				if ( host && host !== location.hostname ) {
+					out.push( { host, type: r.initiatorType, page } );
+				}
+			} );
+			for ( let i = 0; i < w.frames.length; i++ ) {
+				try {
+					if ( w.frames[ i ].location.hostname === location.hostname ) {
+						frameHosts( w.frames[ i ], page, out );
+					}
+				} catch ( e ) {}
+			}
+		} catch ( e ) {}
+	}
+
+	/**
+	 * Privacy measurement: hides consent cookies, loads home + sample pages as a first visitor (no clicks),
+	 * records new cookies, storage keys and third-party hosts, then restores the browser to its previous state.
+	 * Only names and hosts are sent to the server, never values.
+	 */
+	async function privacyProbe() {
+		const setup = S.probeSetup || { urls: [ C.home ], consentCookie: '^plakette_consent$' };
+		const consentRe = new RegExp( setup.consentCookie );
+		ui.busy = 'probe';
+		ui.probing = true;
+		ui.probeStep = 'Vorbereiten …';
+		render();
+		const before = cookieMap();
+		const stash = {};
+		Object.keys( before ).forEach( ( n ) => {
+			if ( consentRe.test( n ) ) {
+				stash[ n ] = before[ n ];
+				killCookie( n );
+			}
+		} );
+		const base = cookieMap();
+		const baseLocal = new Set( storageKeys( window, 'local' ) );
+		const baseSession = new Set( storageKeys( window, 'session' ) );
+		const baseIdb = new Set( await idbNames( window ) );
+		const result = { pages: [], cookies: [], storage: [], hosts: [], errors: [] };
+		const frame = document.getElementById( 'plk-probe-frame' );
+		const urls = ( setup.urls || [ C.home ] ).slice( 0, 4 );
+		try {
+			for ( let i = 0; i < urls.length; i++ ) {
+				const page = urls[ i ];
+				ui.probeStep = `Seite ${ i + 1 } von ${ urls.length } wird wie von einem Erstbesucher geladen (ohne Klick) …`;
+				const cap = app.querySelector( '.plk-probe-frame figcaption' );
+				if ( cap ) {
+					cap.textContent = ui.probeStep;
+				}
+				await new Promise( ( resolve ) => {
+					const timer = setTimeout( () => {
+						result.errors.push( 'Zeitüberschreitung: ' + page );
+						resolve();
+					}, 30000 );
+					frame.addEventListener( 'load', () => {
+						clearTimeout( timer );
+						resolve();
+					}, { once: true } );
+					frame.src = page + ( page.indexOf( '?' ) === -1 ? '?' : '&' ) + 'plakette_measure=' + Date.now();
+				} );
+				await sleep( i === 0 ? 5000 : 3500 );
+				result.pages.push( page );
+				const w = frame.contentWindow;
+				const now = cookieMap();
+				Object.keys( now ).forEach( ( n ) => {
+					if ( ! ( n in base ) || now[ n ] !== base[ n ] ) {
+						if ( ! result.cookies.some( ( c ) => c.name === n ) ) {
+							result.cookies.push( { name: n, page } );
+						}
+					}
+				} );
+				[ [ 'local', baseLocal ], [ 'session', baseSession ] ].forEach( ( [ area, known ] ) => {
+					storageKeys( w, area ).forEach( ( k ) => {
+						if ( ! known.has( k ) && ! result.storage.some( ( st ) => st.area === area && st.key === k ) ) {
+							result.storage.push( { area, key: k, page } );
+						}
+					} );
+				} );
+				( await idbNames( w ) ).forEach( ( k ) => {
+					if ( ! baseIdb.has( k ) && ! result.storage.some( ( st ) => st.area === 'idb' && st.key === k ) ) {
+						result.storage.push( { area: 'idb', key: k, page } );
+					}
+				} );
+				const hosts = [];
+				frameHosts( w, page, hosts );
+				hosts.forEach( ( h ) => {
+					if ( ! result.hosts.some( ( x ) => x.host === h.host ) ) {
+						result.hosts.push( h );
+					}
+				} );
+			}
+		} catch ( e ) {
+			result.errors.push( e.message );
+		} finally {
+			frame.src = 'about:blank';
+			// Leave the browser as it was: remove what the visit added, put the consent cookies back.
+			result.cookies.forEach( ( c ) => {
+				if ( ! ( c.name in before ) ) {
+					killCookie( c.name );
+				}
+			} );
+			result.storage.forEach( ( st ) => {
+				try {
+					if ( st.area === 'local' ) {
+						localStorage.removeItem( st.key );
+					} else if ( st.area === 'session' ) {
+						sessionStorage.removeItem( st.key );
+					}
+				} catch ( e ) {}
+			} );
+			Object.keys( stash ).forEach( ( n ) => {
+				document.cookie = n + '=' + stash[ n ] + ';path=/;max-age=' + 180 * 86400 + ';SameSite=Lax' + ( location.protocol === 'https:' ? ';Secure' : '' );
+			} );
+		}
+		try {
+			setState( await api( '/privacy-probe', 'POST', result ) );
+			const c = byId( 'privacy_consent' );
+			toast( c ? ( c.status === 'pass' ? c.title : c.problem ) + ' – Details beim Prüfpunkt.' : 'Messung gespeichert.' );
+		} catch ( e ) {
+			toast( e.message, null, true );
+		}
+		ui.busy = null;
+		ui.probing = false;
+		render();
+	}
+
+	/* ------------------------------------------------------------ Plakette-Statistik */
+
+	function statsPanel() {
+		const st = S.stats;
+		if ( ! st ) {
+			return '';
+		}
+		const days = Object.keys( st.daily || {} );
+		const max = Math.max( 1, ...days.map( ( d ) => st.daily[ d ] ) );
+		const dayLabel = ( d ) => new Date( d + 'T12:00:00' ).toLocaleDateString( 'de-DE', { day: 'numeric', month: 'short' } );
+		const bars = days.map( ( d ) => {
+			const n = st.daily[ d ];
+			return `<li><span class="plk-sbar" style="height:${ Math.round( ( n / max ) * 100 ) }%"></span><span class="screen-reader-text">${ esc( dayLabel( d ) ) }: ${ n } Aufrufe</span></li>`;
+		} ).join( '' );
+		const table = ( title, rows, label ) => {
+			const top = Math.max( 1, ...( rows || [] ).map( ( r ) => r.n ) );
+			return `<div class="plk-stats-col"><h3>${ title }</h3>${ rows && rows.length ? `<table class="plk-table"><thead><tr><th scope="col">${ label }</th><th scope="col">Aufrufe</th></tr></thead><tbody>${ rows.map( ( r ) => `<tr><td>${ esc( r.k || ( label === 'Herkunft' ? 'direkt / unbekannt' : '–' ) ) }</td><td><span class="plk-hbar" style="width:${ Math.round( ( r.n / top ) * 100 ) }%"></span> ${ r.n }</td></tr>` ).join( '' ) }</tbody></table>` : '<p class="plk-help">Noch keine Daten.</p>' }</div>`;
+		};
+		const devices = ( st.devices || [] ).map( ( r ) => ( { k: { mobile: 'Smartphone', tablet: 'Tablet', desktop: 'Computer' }[ r.k ] || r.k, n: r.n } ) );
+		return `<section class="plk-panel plk-stats" aria-labelledby="plk-stats-h">
+			<style>.plk-stats-days{display:flex;align-items:flex-end;gap:2px;height:120px;margin:0 0 4px;padding:0;list-style:none;border-bottom:1px solid #8c8f94}.plk-stats-days li{flex:1;height:100%;display:flex;align-items:flex-end}.plk-sbar{display:block;width:100%;min-height:1px;background:#2271b1}.plk-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px}.plk-hbar{display:inline-block;height:.7em;background:#2271b1;vertical-align:middle;max-width:60%}.plk-stats-axis{display:flex;justify-content:space-between;font-size:12px;color:#50575e}</style>
+			<div class="plk-panel-head"><h2 id="plk-stats-h">Besucher – Plakette-Statistik</h2></div>
+			<p class="plk-panel-note">${ plural( st.total, 'Seitenaufruf', 'Seitenaufrufe' ) } in den letzten ${ st.days } Tagen. Gezählt ohne Cookies und ohne IP-Adresse – deshalb ist keine Einwilligung nötig. Angemeldete Nutzer und Suchmaschinen-Bots zählen nicht.</p>
+			<ul class="plk-stats-days" aria-label="Seitenaufrufe pro Tag">${ bars }</ul>
+			<div class="plk-stats-axis" aria-hidden="true"><span>${ esc( dayLabel( days[ 0 ] ) ) }</span><span>${ esc( dayLabel( days[ days.length - 1 ] ) ) }</span></div>
+			<div class="plk-stats-grid">${ table( 'Meistgelesene Seiten', st.paths, 'Seite' ) }${ table( 'Woher Besucher kommen', st.referrers, 'Herkunft' ) }${ table( 'Geräte', devices, 'Gerät' ) }</div>
+		</section>`;
+	}
+
 	async function copyLetter( id ) {
 		const ta = document.getElementById( 'plk-letter-' + id );
 		if ( ! ta ) {
@@ -934,6 +1182,8 @@
 			undo( t.dataset.run, t.dataset.check );
 		} else if ( a === 'measure' ) {
 			measure();
+		} else if ( a === 'probe' ) {
+			privacyProbe();
 		} else if ( a === 'psi' ) {
 			psi();
 		} else if ( a === 'psi-key' ) {

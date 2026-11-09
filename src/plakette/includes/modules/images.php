@@ -419,6 +419,11 @@ class Plakette_Modern_Images {
 
 	/** Transform for Plakette_Html. */
 	public static function transform( $html ) {
+		// Another optimiser (EWWW, CompressX, ShortPixel, a CDN, the server …) already delivers modern formats:
+		// never run in parallel (no double <picture>, no second set of copies in the page).
+		if ( Plakette_Image_Delivery::foreign() ) {
+			return $html;
+		}
 		return Plakette_Html::outside_code(
 			$html,
 			function ( $part ) {
@@ -441,7 +446,7 @@ class Plakette_Modern_Images {
 	/** Wraps one <img> in <picture> when copies exist. */
 	public static function wrap( array $m ) {
 		$tag = $m[0];
-		if ( preg_match( '#\sdata-wp-[a-z-]+#i', $tag ) || preg_match( '#\sclass=["\'][^"\']*\bplk-no-picture\b#i', $tag ) ) {
+		if ( preg_match( '#\s(data-wp-[a-z-]+|data-eio|data-src-webp|data-srcset-webp)\b#i', $tag ) || preg_match( '#\sclass=["\'][^"\']*\b(plk-no-picture|ewww_webp)#i', $tag ) ) {
 			return $tag;
 		}
 		$src    = Plakette_Html::attr( $tag, 'src' );
@@ -507,3 +512,525 @@ class Plakette_Modern_Images {
 }
 
 add_action( 'plakette_boot', array( 'Plakette_Modern_Images', 'boot' ) );
+
+/**
+ * What does a real visitor receive? Resolves for every image of a page the candidate a browser downloads –
+ * independent of who optimises (Plakette, EWWW, CompressX, ShortPixel, Imagify, Optimole, Jetpack, Converter for
+ * Media, LiteSpeed, a CDN or the web server):
+ *  - inside <picture>: the first <source> with a supported type (avif/webp/…), also lazy data-srcset;
+ *  - EWWW JS mode: data-src-webp / data-srcset-webp;  lazy loaders: data-src / data-srcset instead of data: placeholders;
+ *  - <noscript> fallbacks, <script>, <template> and comments are ignored;
+ *  - the candidate is picked from srcset/sizes for a phone (412 CSS px × DPR 2.6) and a desktop (1366 px × 1);
+ *  - the format comes from a request like a browser makes it (Accept: image/avif,image/webp,…) – a .jpg URL that the
+ *    server answers with image/avif counts as AVIF (rewrite by Accept header, Vary: Accept).
+ */
+class Plakette_Image_Delivery {
+
+	const ACCEPT    = 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8';
+	const VIEWPORTS = array(
+		'mobile'  => array( 412, 2.6 ),
+		'desktop' => array( 1366, 1.0 ),
+	);
+	const MAX_PROBES = 60;
+	const OPTION     = 'plakette_image_delivery';
+
+	/** Optimisers by plugin folder: name, delivery mode (picture | js | server | cdn | url). */
+	const OPTIMIZERS = array(
+		'ewww-image-optimizer'          => array( 'EWWW', 'picture' ),
+		'ewww-image-optimizer-cloud'    => array( 'EWWW', 'picture' ),
+		'compressx'                     => array( 'CompressX', 'server' ),
+		'shortpixel-image-optimiser'    => array( 'ShortPixel', 'picture' ),
+		'shortpixel-adaptive-images'    => array( 'ShortPixel', 'cdn' ),
+		'imagify'                       => array( 'Imagify', 'picture' ),
+		'optimole-wp'                   => array( 'Optimole', 'cdn' ),
+		'webp-converter-for-media'      => array( 'Converter for Media', 'server' ),
+		'litespeed-cache'               => array( 'LiteSpeed', 'url' ),
+		'jetpack'                       => array( 'Jetpack', 'cdn' ),
+		'jetpack-boost'                 => array( 'Jetpack Boost', 'cdn' ),
+		'wp-smushit'                    => array( 'Smush', 'server' ),
+		'webp-uploads'                  => array( 'Modern Image Formats', 'url' ),
+		'performance-lab'               => array( 'Performance Lab', 'url' ),
+		'webp-express'                  => array( 'WebP Express', 'server' ),
+		'wp-optimize'                   => array( 'WP-Optimize', 'server' ),
+		'tiny-compress-images'          => array( 'TinyPNG', 'picture' ),
+		'wp-rocket'                     => array( 'WP Rocket', 'picture' ),
+	);
+
+	private static $probes = array();
+	private static $count  = 0;
+	private static $ctx    = array();
+
+	/* ------------------------------------------------------------------ plugins */
+
+	/** Active image optimisers (by plugin folder): [ name => mode ]. */
+	public static function active_optimizers() {
+		$active = (array) get_option( 'active_plugins', array() );
+		if ( is_multisite() ) {
+			$active = array_merge( $active, array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) ) );
+		}
+		$out = array();
+		foreach ( $active as $plugin ) {
+			$dir = strtok( (string) $plugin, '/' );
+			if ( isset( self::OPTIMIZERS[ $dir ] ) ) {
+				$out[ self::OPTIMIZERS[ $dir ][0] ] = self::OPTIMIZERS[ $dir ][1];
+			}
+		}
+		return $out;
+	}
+
+	/* ------------------------------------------------------------------ parsing */
+
+	private static function absolute( $url, $base ) {
+		$url = trim( html_entity_decode( (string) $url, ENT_QUOTES, 'UTF-8' ) );
+		if ( '' === $url || str_starts_with( $url, 'data:' ) ) {
+			return '';
+		}
+		if ( str_starts_with( $url, '//' ) ) {
+			return 'https:' . $url;
+		}
+		if ( preg_match( '#^https?://#i', $url ) ) {
+			return $url;
+		}
+		$p    = wp_parse_url( $base );
+		$root = ( $p['scheme'] ?? 'https' ) . '://' . ( $p['host'] ?? '' ) . ( isset( $p['port'] ) ? ':' . $p['port'] : '' );
+		if ( str_starts_with( $url, '/' ) ) {
+			return $root . $url;
+		}
+		$path = isset( $p['path'] ) ? preg_replace( '#/[^/]*$#', '/', $p['path'] ) : '/';
+		return $root . $path . $url;
+	}
+
+	/** First non-empty attribute (skipping data: placeholders). */
+	private static function first_attr( $tag, array $names ) {
+		foreach ( $names as $n ) {
+			$v = Plakette_Html::attr( $tag, $n );
+			if ( '' !== trim( $v ) && ! str_starts_with( trim( $v ), 'data:' ) ) {
+				return $v;
+			}
+		}
+		return '';
+	}
+
+	/** srcset string → [ [ url, w|null, x|null ] ] (absolute URLs, placeholders dropped). */
+	public static function parse_srcset( $srcset, $base ) {
+		$out = array();
+		// URLs may contain commas (Cloudinary, Optimole) – split on comma followed by whitespace or after a descriptor.
+		foreach ( preg_split( '/,\s+|(?<=\d[wx]),/', trim( (string) $srcset ) ) as $cand ) {
+			$parts = preg_split( '/\s+/', trim( $cand ) );
+			$url   = self::absolute( $parts[0] ?? '', $base );
+			if ( '' === $url ) {
+				continue;
+			}
+			$d = strtolower( $parts[1] ?? '' );
+			$out[] = array(
+				'url' => $url,
+				'w'   => str_ends_with( $d, 'w' ) ? (float) $d : null,
+				'x'   => str_ends_with( $d, 'x' ) ? (float) $d : ( '' === $d ? 1.0 : null ),
+			);
+		}
+		return $out;
+	}
+
+	/** Width in CSS px of one sizes length (px, vw, em/rem, simple calc). */
+	private static function length( $len, $vw ) {
+		$len = trim( strtolower( $len ) );
+		if ( preg_match( '/^calc\((.*)\)$/', $len, $m ) ) {
+			$total = 0.0;
+			if ( preg_match_all( '/([+-]?)\s*([\d.]+)(px|vw|r?em)/', $m[1], $terms, PREG_SET_ORDER ) ) {
+				foreach ( $terms as $t ) {
+					$v      = self::length( $t[2] . $t[3], $vw );
+					$total += '-' === $t[1] ? -$v : $v;
+				}
+				return max( 1.0, $total );
+			}
+			return (float) $vw;
+		}
+		if ( preg_match( '/^([\d.]+)(px|vw|r?em)?$/', $len, $m ) ) {
+			$n    = (float) $m[1];
+			$unit = $m[2] ?? 'px';
+			return 'vw' === $unit ? $n * $vw / 100 : ( 'px' === $unit ? $n : $n * 16 );
+		}
+		return (float) $vw;
+	}
+
+	/** Evaluates a sizes attribute for a viewport width. */
+	public static function slot( $sizes, $vw, $attr_width ) {
+		$sizes = trim( (string) $sizes );
+		if ( '' === $sizes ) {
+			return (float) $vw;
+		}
+		foreach ( explode( ',', $sizes ) as $entry ) {
+			$entry = trim( $entry );
+			if ( 'auto' === strtolower( $entry ) ) {
+				if ( $attr_width > 0 ) {
+					return min( (float) $attr_width, (float) $vw );
+				}
+				continue;
+			}
+			if ( preg_match( '/^\((.+)\)\s+(\S.*)$/', $entry, $m ) ) {
+				$ok = true;
+				foreach ( preg_split( '/\)\s*and\s*\(/i', $m[1] ) as $cond ) {
+					if ( preg_match( '/(min|max)-width\s*:\s*([\d.]+)(px|r?em)?/i', $cond, $c ) ) {
+						$px = (float) $c[2] * ( isset( $c[3] ) && '' !== $c[3] && 'px' !== strtolower( $c[3] ) ? 16 : 1 );
+						$ok = $ok && ( 'min' === strtolower( $c[1] ) ? $vw >= $px : $vw <= $px );
+					}
+				}
+				if ( $ok ) {
+					return self::length( $m[2], $vw );
+				}
+				continue;
+			}
+			return self::length( $entry, $vw );
+		}
+		return (float) $vw;
+	}
+
+	/** Candidate a browser picks for viewport $vw / $dpr. */
+	public static function pick( array $cands, $sizes, $vw, $dpr, $attr_width ) {
+		if ( ! $cands ) {
+			return '';
+		}
+		$w = array_filter( $cands, fn( $c ) => null !== $c['w'] );
+		if ( $w ) {
+			usort( $w, fn( $a, $b ) => $a['w'] <=> $b['w'] );
+			$need = self::slot( $sizes, $vw, $attr_width ) * $dpr;
+			foreach ( $w as $c ) {
+				if ( $c['w'] >= $need ) {
+					return $c['url'];
+				}
+			}
+			return end( $w )['url'];
+		}
+		$x = array_filter( $cands, fn( $c ) => null !== $c['x'] );
+		usort( $x, fn( $a, $b ) => $a['x'] <=> $b['x'] );
+		foreach ( $x as $c ) {
+			if ( $c['x'] >= $dpr ) {
+				return $c['url'];
+			}
+		}
+		return $x ? end( $x )['url'] : $cands[0]['url'];
+	}
+
+	/**
+	 * All images of a page with their candidate sets (no network).
+	 *
+	 * @return array list of [ fallback, fallback_set, sizes, width, set (delivered candidates), via, marker ]
+	 */
+	public static function images( $html, $base ) {
+		$html = preg_replace( '#<(noscript|script|template|style|textarea)\b.*?</\1>|<!--.*?-->#is', '', (string) $html );
+		$out  = array();
+		if ( ! preg_match_all( '#<picture\b.*?</picture>|<img\b[^>]*>#is', (string) $html, $mm ) ) {
+			return $out;
+		}
+		foreach ( $mm[0] as $chunk ) {
+			$picture = 0 === stripos( $chunk, '<picture' );
+			if ( ! preg_match( '#<img\b[^>]*>#i', $chunk, $im ) ) {
+				continue;
+			}
+			$img      = $im[0];
+			$src      = self::first_attr( $img, array( 'src', 'data-src', 'data-lazy-src', 'data-src-img', 'data-orig-src' ) );
+			$srcset   = self::first_attr( $img, array( 'srcset', 'data-srcset', 'data-lazy-srcset', 'data-srcset-img' ) );
+			// Lazy loaders: real srcset is in data-srcset while srcset holds a placeholder.
+			if ( '' !== Plakette_Html::attr( $img, 'data-srcset' ) && ( '' === Plakette_Html::attr( $img, 'srcset' ) || str_contains( Plakette_Html::attr( $img, 'srcset' ), 'data:' ) ) ) {
+				$srcset = Plakette_Html::attr( $img, 'data-srcset' );
+			}
+			$sizes    = self::first_attr( $img, array( 'sizes', 'data-sizes' ) );
+			$fallback = self::parse_srcset( $srcset, $base );
+			$first    = self::absolute( $src, $base );
+			if ( ! $fallback && '' !== $first ) {
+				$fallback = array( array( 'url' => $first, 'w' => null, 'x' => 1.0 ) );
+			}
+			if ( ! $fallback ) {
+				continue;
+			}
+			$width = (int) Plakette_Html::attr( $img, 'width' );
+			$h     = (int) Plakette_Html::attr( $img, 'height' );
+			if ( ( $width > 0 && $width < 3 ) || ( $h > 0 && $h < 3 ) ) {
+				continue; // tracking pixel
+			}
+			$set    = $fallback;
+			$ssizes = $sizes;
+			$via    = 'img';
+			$marker = '';
+			if ( $picture && preg_match_all( '#<source\b[^>]*>#i', $chunk, $sm ) ) {
+				foreach ( $sm[0] as $source ) {
+					$type = strtolower( Plakette_Html::attr( $source, 'type' ) );
+					if ( '' !== Plakette_Html::attr( $source, 'media' ) && ! preg_match( '/^\s*all\s*$/i', Plakette_Html::attr( $source, 'media' ) ) ) {
+						continue; // art direction – keep it simple: the default image decides
+					}
+					if ( '' !== $type && ! in_array( $type, array( 'image/avif', 'image/webp', 'image/jpeg', 'image/png', 'image/apng', 'image/gif' ), true ) ) {
+						continue; // a type Chromium does not support (e.g. image/jxl)
+					}
+					$ss    = self::first_attr( $source, array( 'srcset', 'data-srcset', 'data-lazy-srcset' ) );
+					$cands = self::parse_srcset( $ss, $base );
+					if ( $cands ) {
+						$set    = $cands;
+						$ssizes = self::first_attr( $source, array( 'sizes', 'data-sizes' ) );
+						$ssizes = '' !== $ssizes ? $ssizes : $sizes;
+						$via    = 'picture';
+						$marker = str_contains( $chunk, 'plk-picture' ) ? 'Plakette' : ( str_contains( $chunk, 'data-eio' ) ? 'EWWW' : '' );
+						break;
+					}
+				}
+			} else {
+				// EWWW JS-WebP mode: <img data-eio="j" data-src-webp="…" data-srcset-webp="…">
+				$wss = Plakette_Html::attr( $img, 'data-srcset-webp' );
+				$ws  = Plakette_Html::attr( $img, 'data-src-webp' );
+				if ( '' !== $wss || '' !== $ws ) {
+					$cands = '' !== $wss ? self::parse_srcset( $wss, $base ) : array( array( 'url' => self::absolute( $ws, $base ), 'w' => null, 'x' => 1.0 ) );
+					if ( $cands && '' !== $cands[0]['url'] ) {
+						$set    = $cands;
+						$via    = 'js';
+						$marker = 'EWWW';
+					}
+				}
+			}
+			if ( '' === $marker && str_contains( $img, 'data-eio' ) ) {
+				$marker = 'EWWW';
+			}
+			$out[] = array(
+				'fallback'     => $first ? $first : $fallback[0]['url'],
+				'fallback_set' => $fallback,
+				'sizes'        => $ssizes,
+				'img_sizes'    => $sizes,
+				'width'        => $width,
+				'set'          => $set,
+				'via'          => $via,
+				'marker'       => $marker,
+			);
+		}
+		return $out;
+	}
+
+	/* ------------------------------------------------------------------ network */
+
+	private static function format_of( $mime_or_url ) {
+		$s = strtolower( (string) $mime_or_url );
+		foreach ( array( 'avif', 'webp', 'png', 'gif', 'svg' ) as $f ) {
+			if ( str_contains( $s, 'image/' . $f ) || preg_match( '/\.' . $f . '(\?|#|$)/', $s ) ) {
+				return $f;
+			}
+		}
+		return ( str_contains( $s, 'jpeg' ) || preg_match( '/\.jpe?g(\?|#|$)/', $s ) ) ? 'jpeg' : '';
+	}
+
+	/**
+	 * Requests an image like a browser (Accept with AVIF/WebP). Cached per request and for a day.
+	 *
+	 * @return array [ format, bytes, negotiated (Vary: Accept), ok ]
+	 */
+	public static function probe( $url ) {
+		if ( isset( self::$probes[ $url ] ) ) {
+			return self::$probes[ $url ];
+		}
+		$tkey   = 'plakette_imgprobe_' . md5( $url );
+		$cached = get_transient( $tkey );
+		if ( is_array( $cached ) ) {
+			return self::$probes[ $url ] = $cached;
+		}
+		$res = array( 'format' => self::format_of( $url ), 'bytes' => 0, 'negotiated' => false, 'ok' => false );
+		if ( self::$count >= self::MAX_PROBES ) {
+			$local = Plakette_Performance::local_path( $url );
+			if ( $local && is_file( $local ) ) {
+				$res['bytes'] = (int) filesize( $local );
+			}
+			return self::$probes[ $url ] = $res;
+		}
+		++self::$count;
+		$args = array(
+			'timeout'     => 8,
+			'redirection' => 3,
+			'sslverify'   => false,
+			'headers'     => array( 'Accept' => self::ACCEPT ),
+			'user-agent'  => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Plakette',
+		);
+		$r     = wp_remote_head( $url, $args );
+		$len   = is_wp_error( $r ) ? 0 : (int) wp_remote_retrieve_header( $r, 'content-length' );
+		$code  = is_wp_error( $r ) ? 0 : (int) wp_remote_retrieve_response_code( $r );
+		if ( is_wp_error( $r ) || $code >= 400 || ! $len ) {
+			$r    = wp_remote_get( $url, $args + array( 'limit_response_size' => 8 * MB_IN_BYTES ) );
+			$code = is_wp_error( $r ) ? 0 : (int) wp_remote_retrieve_response_code( $r );
+			$len  = is_wp_error( $r ) ? 0 : strlen( (string) wp_remote_retrieve_body( $r ) );
+		}
+		if ( ! is_wp_error( $r ) && $code > 0 && $code < 400 ) {
+			$type              = (string) wp_remote_retrieve_header( $r, 'content-type' );
+			$fmt               = self::format_of( $type );
+			$res['format']     = '' !== $fmt ? $fmt : $res['format'];
+			$res['bytes']      = $len;
+			$res['negotiated'] = (bool) preg_match( '/\baccept\b/i', (string) wp_remote_retrieve_header( $r, 'vary' ) ) || ( '' !== $fmt && $fmt !== self::format_of( $url ) && in_array( $fmt, array( 'avif', 'webp' ), true ) );
+			$res['ok']         = true;
+			set_transient( $tkey, $res, HOUR_IN_SECONDS );
+		}
+		return self::$probes[ $url ] = $res;
+	}
+
+	/** Who delivers this image in a modern format? */
+	private static function who( array $img, array $d ) {
+		if ( '' !== $img['marker'] ) {
+			return $img['marker'];
+		}
+		$host = strtolower( (string) wp_parse_url( $d['url'], PHP_URL_HOST ) );
+		if ( preg_match( '/(^|\.)i\d\.wp\.com$/', $host ) ) {
+			return 'Jetpack';
+		}
+		if ( str_contains( $host, 'optimole' ) ) {
+			return 'Optimole';
+		}
+		if ( str_contains( $host, 'shortpixel' ) ) {
+			return 'ShortPixel';
+		}
+		$opt = self::active_optimizers();
+		foreach ( $opt as $name => $mode ) {
+			if ( 'server' === $d['how'] && in_array( $mode, array( 'server', 'cdn' ), true ) ) {
+				return $name;
+			}
+			if ( 'server' !== $d['how'] && in_array( $mode, array( 'picture', 'url' ), true ) ) {
+				return $name;
+			}
+		}
+		if ( 'server' === $d['how'] ) {
+			return __( 'der Server', 'plakette' );
+		}
+		$path = Plakette_Performance::local_path( $img['fallback'] );
+		return $path && preg_match( '/\.(webp|avif)$/i', $path ) ? __( 'die Mediathek (Upload ist schon modern)', 'plakette' ) : __( 'die Website', 'plakette' );
+	}
+
+	/**
+	 * Delivered candidate per viewport.
+	 *
+	 * @return array images with mobile/desktop => [ url, format, bytes, how (url|picture|js|server) ], who, attachment
+	 */
+	public static function analyse( $html, $base ) {
+		$out = array();
+		foreach ( self::images( $html, $base ) as $img ) {
+			$row = $img;
+			foreach ( self::VIEWPORTS as $vp => $v ) {
+				$url = self::pick( $img['set'], $img['sizes'], $v[0], $v[1], $img['width'] );
+				$p   = self::probe( $url );
+				$how = in_array( $img['via'], array( 'picture', 'js' ), true ) ? $img['via'] : 'url';
+				if ( $p['negotiated'] && in_array( $p['format'], array( 'avif', 'webp' ), true ) && ! in_array( self::format_of( $url ), array( 'avif', 'webp' ), true ) ) {
+					$how = 'server';
+				}
+				$row[ $vp ] = array( 'url' => $url, 'format' => $p['format'], 'bytes' => $p['bytes'], 'how' => $how );
+			}
+			$row['modern']     = in_array( $row['desktop']['format'], array( 'avif', 'webp' ), true ) && in_array( $row['mobile']['format'], array( 'avif', 'webp' ), true );
+			$row['who']        = $row['modern'] ? self::who( $img, $row['desktop'] ) : '';
+			// Delivered by an optimiser (not just an upload that already is WebP/AVIF)?
+			$row['optimized'] = $row['modern'] && ( in_array( $row['desktop']['how'], array( 'picture', 'js', 'server' ), true )
+				|| '' !== $img['marker']
+				|| preg_match( '/\.(jpe?g|png)\.(webp|avif)(\?|$)/i', $row['desktop']['url'] )
+				|| in_array( $row['who'], array( 'Jetpack', 'Optimole', 'ShortPixel' ), true ) );
+			$row['attachment'] = self::attachment_id( $img['fallback'] );
+			$out[]             = $row;
+		}
+		return $out;
+	}
+
+	/** Attachment id of a (size variant) upload URL, 0 if none. */
+	public static function attachment_id( $url ) {
+		static $cache = array();
+		if ( isset( $cache[ $url ] ) ) {
+			return $cache[ $url ];
+		}
+		$clean = (string) strtok( $url, '?#' );
+		$id    = attachment_url_to_postid( $clean );
+		if ( ! $id ) {
+			$id = attachment_url_to_postid( preg_replace( '/-\d+x\d+(?=\.\w+$)/', '', $clean ) );
+		}
+		if ( ! $id ) {
+			$id = attachment_url_to_postid( preg_replace( '/(-\d+x\d+)?(\.\w+)$/', '-scaled$2', $clean, 1 ) );
+		}
+		return $cache[ $url ] = (int) $id;
+	}
+
+	/** Analysis of home + sample pages, once per audit. Also stored for the HTML transform. */
+	public static function for_context( Plakette_Context $ctx ) {
+		$key = spl_object_id( $ctx );
+		if ( isset( self::$ctx[ $key ] ) ) {
+			return self::$ctx[ $key ];
+		}
+		$images = array();
+		$seen   = array();
+		foreach ( $ctx->all_html() as $id => $html ) {
+			$base = $id ? (string) get_permalink( $id ) : home_url( '/' );
+			foreach ( self::analyse( $html, $base ) as $row ) {
+				$k = $row['fallback'] . '|' . $row['via'];
+				if ( isset( $seen[ $k ] ) ) {
+					continue;
+				}
+				$seen[ $k ]  = true;
+				$row['page'] = $base;
+				$images[]    = $row;
+			}
+		}
+		$foreign = array();
+		$server  = false;
+		foreach ( $images as $row ) {
+			if ( $row['optimized'] && 'Plakette' !== $row['who'] ) {
+				$foreign[ $row['who'] ] = ( $foreign[ $row['who'] ] ?? 0 ) + 1;
+				$server                 = $server || 'server' === $row['desktop']['how'];
+			}
+		}
+		update_option(
+			self::OPTION,
+			array(
+				'foreign' => $foreign,
+				'server'  => $server,
+				'time'    => time(),
+			),
+			false
+		);
+		return self::$ctx[ $key ] = $images;
+	}
+
+	/** Raster images only (no SVG/GIF, nothing unknown). */
+	public static function raster( array $images ) {
+		return array_values( array_filter( $images, fn( $r ) => in_array( $r['desktop']['format'], array( 'jpeg', 'png', 'webp', 'avif' ), true ) ) );
+	}
+
+	/** Who else serves modern formats here (found by the last audit): [ name => images ]. */
+	public static function foreign() {
+		$d = get_option( self::OPTION, array() );
+		return is_array( $d ) && ! empty( $d['foreign'] ) ? (array) $d['foreign'] : array();
+	}
+
+	/** Modern sibling of a library file on disk (EWWW/Plakette/LiteSpeed: bild.jpg.webp, ShortPixel/Imagify: bild.webp, Converter for Media, CompressX). */
+	public static function has_modern_copy( $path ) {
+		return self::modern_copy_bytes( $path ) > 0;
+	}
+
+	/** Bytes of the smallest modern sibling on disk (0 = none). */
+	public static function modern_copy_bytes( $path ) {
+		$cands = array();
+		foreach ( array( 'avif', 'webp' ) as $f ) {
+			$cands[] = $path . '.' . $f;
+			$cands[] = preg_replace( '/\.\w+$/', '.' . $f, $path );
+			foreach ( array( 'uploads-webpc', 'compressx-nextgen' ) as $dir ) {
+				$cands[] = str_replace( WP_CONTENT_DIR . '/', WP_CONTENT_DIR . '/' . $dir . '/', $path ) . '.' . $f;
+			}
+		}
+		$min = 0;
+		foreach ( $cands as $c ) {
+			if ( $c !== $path && is_file( $c ) && filesize( $c ) > 0 ) {
+				$min = $min ? min( $min, (int) filesize( $c ) ) : (int) filesize( $c );
+			}
+		}
+		return $min;
+	}
+
+	/** One line for notes: "bild.jpg – JPEG, 120 KB am Handy, 310 KB am Desktop". */
+	public static function describe( array $row ) {
+		$name = wp_basename( (string) wp_parse_url( $row['fallback'], PHP_URL_PATH ) );
+		$m    = $row['mobile'];
+		$d    = $row['desktop'];
+		$kb   = fn( $b ) => $b ? size_format( $b, $b >= MB_IN_BYTES ? 1 : 0 ) : '?';
+		if ( $m['url'] === $d['url'] ) {
+			return sprintf( '%s – %s, %s', $name, self::label( $d['format'] ), $kb( $d['bytes'] ) );
+		}
+		return sprintf( __( '%1$s – %2$s, %3$s am Handy, %4$s am Desktop', 'plakette' ), $name, self::label( $d['format'] ), $kb( $m['bytes'] ), $kb( $d['bytes'] ) );
+	}
+
+	public static function label( $format ) {
+		return array( 'avif' => 'AVIF', 'webp' => 'WebP', 'jpeg' => 'JPEG', 'png' => 'PNG', 'gif' => 'GIF', 'svg' => 'SVG' )[ $format ] ?? '?';
+	}
+}

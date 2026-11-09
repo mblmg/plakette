@@ -70,12 +70,14 @@ scripts, styles, iframes, links (href,text,label), viewport, generator, hosts (f
 ## Dateien und Modul-Schlüssel
 | Datei | Prüfungen | Module (`Plakette_Modules`) |
 |---|---|---|
-| `checks-privacy.php`, `modules/consent.php`, `modules/privacy.php`, `assets/consent.*` | privacy_third_party, privacy_embeds, privacy_gravatar, privacy_comment_ip, privacy_comment_consent, legal_consent | consent, embeds, local_avatars, comment_ip, comment_note |
+| `checks-privacy.php`, `modules/consent.php`, `modules/privacy.php`, `modules/statistics.php`, `assets/consent.*`, `assets/stats.js` | privacy_consent (bannerfrei?), privacy_third_party, privacy_embeds, privacy_gravatar, privacy_comment_ip, privacy_comment_consent | consent, embeds, local_avatars, comment_ip, comment_note, remove_services (Liste von Dienst-IDs), stats (Plakette-Statistik, Tabelle `plakette_stats`) |
 | `checks-security.php`, `modules/security.php` | security_* | sec_headers, no_xmlrpc, no_user_enum, login_limit, hide_errors, no_generator, mixed_content |
 | `checks-legal.php`, `modules/legal.php` | legal_*, a11y_lang, a11y_zoom, a11y_form_labels | legal_links, shop_button, a11y_lang, a11y_zoom, a11y_form_labels |
 | `checks-toolkit.php`, `modules/performance.php`, `modules/fonts.php` | speed_image_dims, privacy_cdn, a11y_animations, a11y_link_names (+ speed_lcp, privacy_google_fonts) | local_fonts, lcp, lcp_auto, lcp_webp, cdn_local, img_dims, a11y_anim, link_names |
 | `checks-seo-helper.php`, `modules/seo-helper.php`, `modules/breakdance.php` | seo_company_schema, seo_image_sitemap, seo_featured_images, legacy_imm_plugins | company_schema, image_sitemap (+ Einstellungen „breakdance“) |
 
+- Datenschutz-Messung im Browser (admin.js › privacyProbe) → REST `/privacy-probe` → Option `plakette_privacy_probe`; Wissensbasis Cookies/Speicher: `Plakette_Services::storage_kb()`, Plugins je Dienst: `::plugins()`. Externer Prüfer: `node tests/consent-probe.mjs judge [--php 8.4] [--ui]`.
+- Cookie-Banner erscheint nur auf Seiten, die etwas zurückhalten; sonst liegt er als `<template>` bereit (Link „Cookie-Einstellungen“ lädt ihn nach).
 - Cookie-Einstellungen wieder öffnen: `[plakette_cookie_settings]`, `a[href="#plakette-consent"]` oder `[data-plakette-consent-open]`.
 - Rechtliche Seiten: `Plakette_Legal::imprint_page()`, `privacy_page()`, `legal_pages()`; Option `plakette_imprint_page`.
 - Alte i-make.media-Plugins: `Plakette_Legacy::handles( $modul )` – Module laufen nicht doppelt, solange das alte Plugin aktiv ist.

@@ -211,37 +211,88 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 	const MAX_BYTES = 350000;
 	const MAX_SIDE  = 2048;
 
+	/** Delivered images heavier than this (at the candidate a browser picks) are flagged. */
+	const MAX_DELIVERED = 250000;
+
 	public function run( Plakette_Context $ctx ) {
 		global $wpdb;
+		// What visitors really download (home + sample pages): format and bytes of the picked candidate.
+		$delivered = array();
+		$heavy     = array();
+		$covered   = 0;
+		$who       = array();
+		if ( $ctx->home_ok() ) {
+			foreach ( Plakette_Image_Delivery::raster( Plakette_Image_Delivery::for_context( $ctx ) ) as $row ) {
+				$bytes = max( (int) $row['desktop']['bytes'], (int) $row['mobile']['bytes'] );
+				if ( $row['attachment'] ) {
+					$delivered[ $row['attachment'] ] = max( $delivered[ $row['attachment'] ] ?? 0, $bytes );
+				}
+				if ( $bytes > self::MAX_DELIVERED ) {
+					$heavy[] = $row;
+				} elseif ( $row['modern'] && '' !== $row['who'] ) {
+					$who[ $row['who'] ] = true;
+				}
+			}
+		}
 		$ids   = $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp') ORDER BY ID DESC LIMIT 2000" );
 		$items = array();
 		$total = 0;
+		$notes = array();
 		foreach ( $ids as $id ) {
-			$file = get_attached_file( (int) $id );
+			$id   = (int) $id;
+			$file = get_attached_file( $id );
 			if ( ! $file || ! file_exists( $file ) ) {
 				continue;
 			}
 			$bytes = filesize( $file );
-			$meta  = wp_get_attachment_metadata( (int) $id );
+			$meta  = wp_get_attachment_metadata( $id );
 			$w     = isset( $meta['width'] ) ? (int) $meta['width'] : 0;
 			$h     = isset( $meta['height'] ) ? (int) $meta['height'] : 0;
-			if ( $bytes > self::MAX_BYTES || max( $w, $h ) > self::MAX_SIDE ) {
-				$total  += $bytes;
-				$items[] = array(
-					'id'    => 'att:' . $id,
-					'label' => wp_basename( $file ),
-					'sub'   => sprintf( '%s, %d × %d px', self::size( $bytes ), $w, $h ),
-					'thumb' => wp_get_attachment_image_url( (int) $id, 'thumbnail' ),
-				);
+			if ( $bytes <= self::MAX_BYTES && max( $w, $h ) <= self::MAX_SIDE ) {
+				continue;
+			}
+			// A big original only costs visitors when they get it: judge what is delivered, not the library.
+			if ( isset( $delivered[ $id ] ) && $delivered[ $id ] <= self::MAX_DELIVERED ) {
+				++$covered;
+				continue;
+			}
+			$copy = Plakette_Image_Delivery::modern_copy_bytes( $file );
+			if ( ! isset( $delivered[ $id ] ) && $copy && $copy <= self::MAX_BYTES ) {
+				++$covered;
+				continue;
+			}
+			$total  += $bytes;
+			$items[] = array(
+				'id'    => 'att:' . $id,
+				'label' => wp_basename( $file ),
+				'sub'   => isset( $delivered[ $id ] )
+					? sprintf( __( '%1$s, %2$d × %3$d px – Besucher laden %4$s', 'plakette' ), self::size( $bytes ), $w, $h, self::size( $delivered[ $id ] ) )
+					: sprintf( '%s, %d × %d px', self::size( $bytes ), $w, $h ),
+				'thumb' => wp_get_attachment_image_url( $id, 'thumbnail' ),
+			);
+		}
+		foreach ( $heavy as $row ) {
+			if ( ! $row['attachment'] ) {
+				$notes[] = Plakette_Image_Delivery::describe( $row ) . ' ' . __( '(nicht aus der Mediathek – im Theme/Page Builder verkleinern)', 'plakette' );
 			}
 		}
+		if ( $covered ) {
+			$notes[] = sprintf(
+				_n( '%d großes Original wird nicht ausgeliefert – Besucher bekommen eine kleinere Version%s.', '%d große Originale werden nicht ausgeliefert – Besucher bekommen kleinere Versionen%s.', $covered, 'plakette' ),
+				$covered,
+				$who ? ' (' . sprintf( __( '%s liefert moderne Formate aus', 'plakette' ), implode( ', ', array_keys( $who ) ) ) . ')' : ''
+			);
+		}
 		if ( ! $items ) {
-			return $this->pass( __( 'Alle Bilder haben eine vernünftige Größe.', 'plakette' ) );
+			$detail = __( 'Besucher laden keine unnötig großen Bilder.', 'plakette' );
+			return $notes && count( $notes ) > ( $covered ? 1 : 0 )
+				? $this->warn( $detail, array( 'notes' => $notes, 'kind' => 'none' ) )
+				: $this->pass( $detail, $notes ? array( 'notes' => $notes ) : array() );
 		}
 		if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/jpeg' ) ) ) {
-			return $this->fail( __( 'Große Bilder gefunden.', 'plakette' ), array( 'items' => $items, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie die PHP-Erweiterung GD oder Imagick, damit WordPress Bilder bearbeiten kann.', 'plakette' ) ) ) );
+			return $this->fail( __( 'Große Bilder gefunden.', 'plakette' ), array( 'items' => $items, 'notes' => $notes, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie die PHP-Erweiterung GD oder Imagick, damit WordPress Bilder bearbeiten kann.', 'plakette' ) ) ) );
 		}
-		return $this->fail( sprintf( __( '%1$d Bilder sind zusammen %2$s groß.', 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items ) );
+		return $this->fail( sprintf( __( '%1$d Bilder sind zusammen %2$s groß.', 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items, 'notes' => $notes ) );
 	}
 
 	public function fix( array $req, array &$undo ) {
@@ -315,40 +366,91 @@ class Plakette_Check_Webp extends Plakette_Speed_Check {
 
 	public function run( Plakette_Context $ctx ) {
 		$formats = Plakette_Modern_Images::formats();
-		$output  = apply_filters( 'image_editor_output_format', array(), '', 'image/jpeg' );
-		if ( ! Plakette_Modern_Images::active() && isset( $output['image/jpeg'] ) && in_array( $output['image/jpeg'], array( 'image/webp', 'image/avif' ), true ) ) {
-			return $this->pass( __( 'Ein anderes Plugin speichert neue Bilder bereits in einem modernen Format.', 'plakette' ) );
+		$which   = $formats['avif'] ? 'AVIF + WebP' : 'WebP';
+		$imgs    = $ctx->home_ok() ? Plakette_Image_Delivery::raster( Plakette_Image_Delivery::for_context( $ctx ) ) : array();
+		$foreign = Plakette_Image_Delivery::foreign();
+		$legacy  = array_values( array_filter( $imgs, fn( $r ) => ! $r['modern'] ) );
+
+		// Who delivers what – judged by what a browser really downloads.
+		$by = array();
+		foreach ( $imgs as $r ) {
+			if ( $r['modern'] ) {
+				$key        = $r['who'] . '|' . Plakette_Image_Delivery::label( $r['desktop']['format'] );
+				$by[ $key ] = ( $by[ $key ] ?? 0 ) + 1;
+			}
+		}
+		$per = array();
+		foreach ( $by as $key => $n ) {
+			list( $name, $fmt )    = explode( '|', $key );
+			$per[ $name ][ $fmt ] = $n;
+		}
+		$who = array();
+		foreach ( $per as $name => $fmts ) {
+			$parts = array();
+			foreach ( $fmts as $fmt => $n ) {
+				$parts[] = sprintf( _n( '%1$d Bild als %2$s', '%1$d Bilder als %2$s', $n, 'plakette' ), $n, $fmt );
+			}
+			$who[] = sprintf( __( '%1$s liefert %2$s aus', 'plakette' ), $name, implode( __( ' und ', 'plakette' ), $parts ) );
+		}
+		$who_text = $who ? implode( ', ', $who ) . '.' : '';
+
+		if ( ! $legacy ) {
+			$todo = Plakette_Modern_Images::active() && ! $foreign ? Plakette_Modern_Images::todo() : array();
+			if ( $todo ) {
+				return $this->warn( sprintf( _n( '%d Bild der Mediathek ist noch nicht umgewandelt.', '%d Bilder der Mediathek sind noch nicht umgewandelt.', count( $todo ), 'plakette' ), count( $todo ) ), array( 'items' => $this->items( $todo ) ) );
+			}
+			if ( $imgs ) {
+				return $this->pass( $who_text . ' ' . __( 'Jeder Browser bekommt ein modernes Format.', 'plakette' ) );
+			}
+			return $this->pass( __( 'Auf den geprüften Seiten gibt es keine Fotos.', 'plakette' ) );
+		}
+
+		$notes = array_map( array( 'Plakette_Image_Delivery', 'describe' ), array_slice( $legacy, 0, 10 ) );
+		$detail = sprintf( _n( '%d Bild kommt bei Besuchern als JPEG/PNG an.', '%d Bilder kommen bei Besuchern als JPEG/PNG an.', count( $legacy ), 'plakette' ), count( $legacy ) );
+		if ( $foreign ) {
+			// Another optimiser is at work – Plakette does not run a second one in parallel.
+			return $this->warn(
+				$detail . ' ' . $who_text . ' ' . sprintf( __( 'Prüfe die Einstellungen von %s für diese Bilder (z. B. ob sie schon umgewandelt sind). Plakette schaltet kein zweites Umwandeln parallel dazu ein.', 'plakette' ), implode( ', ', array_keys( $foreign ) ) ),
+				array( 'notes' => $notes, 'kind' => 'none' )
+			);
 		}
 		if ( ! $formats['webp'] && ! $formats['avif'] ) {
 			return $this->warn(
-				__( 'Der Server kann weder WebP noch AVIF erzeugen.', 'plakette' ),
-				array( 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie AVIF- und WebP-Unterstützung in der PHP-Erweiterung GD oder Imagick, damit WordPress Bilder in modernen Formaten speichern kann.', 'plakette' ) ) )
+				$detail . ' ' . __( 'Der Server kann weder WebP noch AVIF erzeugen.', 'plakette' ),
+				array( 'notes' => $notes, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie AVIF- und WebP-Unterstützung in der PHP-Erweiterung GD oder Imagick, damit WordPress Bilder in modernen Formaten speichern kann.', 'plakette' ) ) )
 			);
 		}
-		$which = $formats['avif'] ? 'AVIF + WebP' : 'WebP';
-		$todo  = Plakette_Modern_Images::todo();
-		if ( ! $todo ) {
-			if ( Plakette_Modern_Images::active() ) {
-				$s = Plakette_Modern_Images::stats();
-				return $this->pass( sprintf( __( '%1$d Bilder als %2$s vorhanden, %3$s gespart. Jeder Browser bekommt das kleinste Format, das er kann.', 'plakette' ), $s['images'], $which, self::size( $s['saved'] ) ) );
+		// Library images of the page first, then everything else that is not converted yet.
+		$ids = array();
+		foreach ( $legacy as $r ) {
+			if ( $r['attachment'] && preg_match( '#^image/(jpe?g|png)$#', (string) get_post_mime_type( $r['attachment'] ) ) ) {
+				$ids[] = $r['attachment'];
 			}
-			return $this->pass( __( 'Keine JPEG- oder PNG-Bilder in der Mediathek.', 'plakette' ) );
 		}
+		$ids = array_values( array_unique( array_merge( $ids, Plakette_Modern_Images::todo() ) ) );
+		if ( ! $ids ) {
+			return $this->warn( $detail . ' ' . __( 'Diese Bilder liegen nicht in der Mediathek (Theme, Page Builder oder fremder Server) – Plakette kann sie nicht umwandeln.', 'plakette' ), array( 'notes' => $notes, 'kind' => 'none' ) );
+		}
+		$extra = array( 'notes' => $notes, 'items' => $this->items( $ids ) );
+		$detail .= ' ' . sprintf( __( 'Der Server kann %s.', 'plakette' ), $which );
+		if ( Plakette_Modern_Images::active() ) {
+			return $this->warn( $detail . ' ' . __( 'Moderne Formate sind eingeschaltet; diese Bilder sind noch nicht umgewandelt.', 'plakette' ), $extra );
+		}
+		return $this->fail( $detail, $extra );
+	}
+
+	private function items( array $ids ) {
 		$items = array();
-		foreach ( array_slice( $todo, 0, 300 ) as $id ) {
-			$file    = (string) get_attached_file( $id );
+		foreach ( array_slice( $ids, 0, 300 ) as $id ) {
+			$n       = count( Plakette_Modern_Images::attachment_files( $id ) );
 			$items[] = array(
 				'id'    => 'att:' . $id,
-				'label' => wp_basename( $file ),
-				'sub'   => sprintf( _n( '%d Bildgröße', '%d Bildgrößen', count( Plakette_Modern_Images::attachment_files( $id ) ), 'plakette' ), count( Plakette_Modern_Images::attachment_files( $id ) ) ),
+				'label' => wp_basename( (string) get_attached_file( $id ) ),
+				'sub'   => sprintf( _n( '%d Bildgröße', '%d Bildgrößen', $n, 'plakette' ), $n ),
 				'thumb' => wp_get_attachment_image_url( $id, 'thumbnail' ),
 			);
 		}
-		$detail = sprintf( _n( '%1$d Bild gibt es nur als JPEG/PNG – der Server kann %2$s.', '%1$d Bilder gibt es nur als JPEG/PNG – der Server kann %2$s.', count( $todo ), 'plakette' ), count( $todo ), $which );
-		if ( Plakette_Modern_Images::active() ) {
-			return $this->warn( $detail . ' ' . __( 'Moderne Formate sind eingeschaltet; diese Bilder sind noch nicht umgewandelt.', 'plakette' ), array( 'items' => $items ) );
-		}
-		return $this->fail( $detail, array( 'items' => $items ) );
+		return $items;
 	}
 
 	public function fix( array $req, array &$undo ) {
@@ -400,13 +502,31 @@ class Plakette_Check_Lcp_Image extends Plakette_Speed_Check {
 	public $fix_label = 'Bild vorrangig laden';
 	public $fix_does  = 'Plakette sucht auf jeder Seite das erste große Bild im Hauptbereich (bzw. das gemessene Bild der Startseite), nimmt dort „später laden“ heraus, gibt ihm höchste Priorität und meldet es dem Browser schon im Kopf der Seite an. Gibt es moderne Kopien (Prüfpunkt „Moderne Bildformate“), meldet Plakette gleich das AVIF- bzw. WebP-Bild an. Ein anderes Bild wählst du mit der CSS-Klasse plk-lcp.';
 
-	/** Pass with the format the browser gets. */
+	/** @var Plakette_Context|null */
+	private $ctx = null;
+
+	/** "Besucher laden: AVIF, 48 KB am Handy …" for the image with this URL. */
+	private function delivered( $url ) {
+		if ( ! $this->ctx || ! $this->ctx->home_ok() ) {
+			return '';
+		}
+		$att = Plakette_Image_Delivery::attachment_id( $url );
+		foreach ( Plakette_Image_Delivery::for_context( $this->ctx ) as $row ) {
+			if ( $row['fallback'] === $url || ( $att && $row['attachment'] === $att ) ) {
+				return ' ' . sprintf( __( 'Besucher laden: %s.', 'plakette' ), Plakette_Image_Delivery::describe( $row ) );
+			}
+		}
+		return '';
+	}
+
+	/** Pass with the format and size the browser gets. */
 	private function good( $url, $detail ) {
-		return $this->pass( $detail );
+		return $this->pass( $detail . $this->delivered( $url ) );
 	}
 
 	public function run( Plakette_Context $ctx ) {
-		$m = $ctx->measured();
+		$this->ctx = $ctx;
+		$m         = $ctx->measured();
 		if ( ! empty( $m['lcp'] ) ) {
 			if ( empty( $m['lcpImage'] ) ) {
 				return $this->pass( sprintf( __( 'Größtes Element ist Text (%s) – kein Bild, das vorgeladen werden müsste.', 'plakette' ), isset( $m['lcpTag'] ) ? strtolower( $m['lcpTag'] ) : 'Text' ) );
@@ -435,10 +555,10 @@ class Plakette_Check_Lcp_Image extends Plakette_Speed_Check {
 		}
 		$name = wp_basename( (string) wp_parse_url( $img['src'], PHP_URL_PATH ) );
 		if ( 'lazy' === $img['loading'] || $img['lazy_class'] ) {
-			return $this->fail( sprintf( __( 'Das erste große Bild (%s) ist auf „später laden“ gestellt.', 'plakette' ), $name ), array( 'notes' => array( __( 'Ermittelt aus dem Seitenaufbau. Genauer wird es mit „Ladezeit messen“.', 'plakette' ) ) ) );
+			return $this->fail( sprintf( __( 'Das erste große Bild (%s) ist auf „später laden“ gestellt.', 'plakette' ), $name ) . $this->delivered( $img['src'] ), array( 'notes' => array( __( 'Ermittelt aus dem Seitenaufbau. Genauer wird es mit „Ladezeit messen“.', 'plakette' ) ) ) );
 		}
 		if ( 'high' !== $img['fetchpriority'] ) {
-			return $this->fail( sprintf( __( 'Das erste große Bild (%s) hat keine hohe Priorität.', 'plakette' ), $name ), array( 'notes' => array( __( 'Ermittelt aus dem Seitenaufbau. Genauer wird es mit „Ladezeit messen“.', 'plakette' ) ) ) );
+			return $this->fail( sprintf( __( 'Das erste große Bild (%s) hat keine hohe Priorität.', 'plakette' ), $name ) . $this->delivered( $img['src'] ), array( 'notes' => array( __( 'Ermittelt aus dem Seitenaufbau. Genauer wird es mit „Ladezeit messen“.', 'plakette' ) ) ) );
 		}
 		return $this->good( $img['src'], sprintf( __( '%s wird vorrangig geladen.', 'plakette' ), $name ) );
 	}

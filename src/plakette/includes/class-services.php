@@ -314,6 +314,22 @@ class Plakette_Services {
 				'consent'  => true,
 				'aliases'  => array( 'Bing', 'Microsoft Advertising', 'UET' ),
 			),
+			// VG Wort counting pixel (METIS). Classification as of 09.11.2026, sources in self::vgwort_note().
+			// VG Wort's own documentation (METIS integration description v2.28, 15.09.2026) still names a "METIS Session
+			// Cookie" (or alternatively a browser signature); VG Wort and Dr. Schwenke consider it exempt from consent,
+			// IT-Recht Kanzlei (2019) and eRecht24 (2022) recommend consent. No court decision. → 'consent' => false,
+			// 'disputed' => true: it does not trigger the banner, the report explains the open question.
+			'vg-wort' => array(
+				'name'     => 'VG-Wort-Zählpixel (METIS)',
+				'category' => 'statistics',
+				'hosts'    => array( 'met.vgwort.de' ),
+				'patterns' => array( '#[a-z0-9-]+\.met\.vgwort\.de/na/#' ),
+				'provider' => 'Verwertungsgesellschaft WORT, Untere Weidenstraße 5, 81543 München (Messung durch Fifty5Blue Deutschland GmbH, Halbergstr. 4, 66121 Saarbrücken)',
+				'policy'   => 'Wir nutzen die METIS-Zugriffszählung der VG WORT (Verwertungsgesellschaft WORT, Untere Weidenstraße 5, 81543 München), durchgeführt von der Fifty5Blue Deutschland GmbH, Halbergstr. 4, 66121 Saarbrücken. Dabei lädt Ihr Browser eine „Zählmarke“ (ein 1×1-Pixel) von einem Server unter met.vgwort.de. Um Mehrfachzählungen zu vermeiden, wird nach Angaben der VG WORT ein Session-Cookie gesetzt oder alternativ eine Signatur aus automatisch übertragenen Browserinformationen gebildet; IP-Adressen werden nur anonymisiert verarbeitet, einzelne Nutzer werden nicht identifiziert. Zweck ist die Ermittlung der Zugriffszahlen unserer Texte als Grundlage der gesetzlichen Vergütung nach dem Urheberrechtsgesetz. Soweit dabei personenbezogene Daten verarbeitet werden, ist Rechtsgrundlage unser berechtigtes Interesse an der urheberrechtlichen Vergütung (Art. 6 Abs. 1 lit. f DSGVO); sofern wir Ihre Einwilligung einholen, ist Rechtsgrundlage Art. 6 Abs. 1 lit. a DSGVO in Verbindung mit § 25 Abs. 1 TDDDG.',
+				'consent'  => false,
+				'disputed' => true,
+				'aliases'  => array( 'VG Wort', 'VG WORT', 'METIS', 'Zählmarke', 'Zählpixel' ),
+			),
 			'cloudflare-insights' => array(
 				'name'     => 'Cloudflare Web Analytics',
 				'category' => 'statistics',
@@ -587,6 +603,19 @@ class Plakette_Services {
 			}
 		}
 		return null;
+	}
+
+	/** What the plugin user should know about the VG Wort pixel: [ text, links ]. Stand: 09.11.2026. */
+	public static function vgwort_note() {
+		return array(
+			__( 'VG-Wort-Zählpixel: Laut VG Wort (Integrationsbeschreibung METIS, Version 2.28 vom 15.09.2026) setzt der Pixel ein „METIS Session Cookie“ oder bildet ersatzweise eine Signatur aus Browserdaten; IP-Adressen werden nur gekürzt verarbeitet. VG Wort und Dr. Schwenke (Stand 13.08.2025) halten das für einwilligungsfrei, IT-Recht Kanzlei (2019) und eRecht24 (2022) raten zur Einwilligung; ein Gerichtsurteil gibt es nicht. Plakette wertet den Pixel deshalb nicht als Grund für einen Cookie-Banner – er gehört aber in die Datenschutzerklärung (berechtigtes Interesse an der Vergütung nach dem Urheberrecht). Wer ganz sicher gehen will, lädt ihn nur nach Einwilligung. (Eine eigene Messung der Cookies war von hier aus nicht möglich. Stand der Prüfung: 09.11.2026.)', 'plakette' ),
+			array(
+				array( 'label' => __( 'VG Wort: METIS-Integrationsbeschreibung (PDF, Datenschutz-Abschnitt)', 'plakette' ), 'url' => 'https://tom.vgwort.de/Documents/pdfs/dokumentation/metis/DOC_Verlagsmeldung.pdf' ),
+				array( 'label' => __( 'Dr. Schwenke: TDDDG und Cookies', 'plakette' ), 'url' => 'https://datenschutz-generator.de/tdddg-cookies/' ),
+				array( 'label' => __( 'eRecht24: VG-Wort-Zählpixel', 'plakette' ), 'url' => 'https://www.e-recht24.de/dsg/12967-vg-wort-zaehlpixel.html' ),
+				array( 'label' => __( 'IT-Recht Kanzlei: Cookies der VG Wort', 'plakette' ), 'url' => 'https://www.it-recht-kanzlei.de/cookies-vg-wort-einwilligungspflicht.html' ),
+			),
+		);
 	}
 
 	/** Service id of one script element (src or inline code), or ''. */
