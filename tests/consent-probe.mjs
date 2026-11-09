@@ -155,12 +155,8 @@ async function audit( base ) {
 async function adminPage( b, base ) {
 	const ctx = await b.newContext( { viewport: { width: 1280, height: 900 } } );
 	const page = await ctx.newPage();
-	await page.goto( base + '/wp-login.php' );
-	if ( await page.locator( '#user_login' ).count() ) {
-		await page.fill( '#user_login', 'admin' );
-		await page.fill( '#user_pass', 'password' );
-		await Promise.all( [ page.waitForNavigation(), page.click( '#wp-submit' ) ] );
-	}
+	// Test-only login (tests/mu/plk-privacy-cases.php): after fix-all the security fixes rename "admin" and limit logins.
+	await page.goto( base + '/?plk_login=1' );
 	await page.goto( base + '/wp-admin/admin.php?page=plakette' );
 	await page.waitForSelector( '#plakette-app .plk-panel', { timeout: 60000 } );
 	return { ctx, page };

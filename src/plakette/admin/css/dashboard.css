@@ -1,0 +1,39 @@
+/* Plakette – dashboard widget (only loaded on wp-admin/index.php). */
+.plk-dash { --plk-major: #b42318; --plk-minor: #8a5100; --plk-pass: #11734b; --plk-ink: #13283f; --plk-soft: #4a5d72; color: var(--plk-ink); }
+#dashboard-widgets .plk-dash h3 { margin: 16px 0 6px; font-size: 14px; font-weight: 600; color: var(--plk-ink); }
+#dashboard-widgets .plk-dash-alert h3 { color: var(--plk-major); margin-top: 8px; }
+.plk-dash-alert { background: #fdf0ee; border-left: 4px solid var(--plk-major); padding: 4px 12px 2px; margin: 0 0 12px; }
+.plk-dash-alert ul { margin: 0 0 8px 1.2em; list-style: disc; }
+.plk-dash-top { display: flex; gap: 16px; align-items: center; }
+.plk-dash-ring { flex: none; }
+.plk-dash-ring-track { fill: none; stroke: #e3e8ee; stroke-width: 10; }
+.plk-dash-ring-fill { fill: none; stroke-width: 10; stroke-linecap: round; }
+.plk-dash-ring.is-good .plk-dash-ring-fill { stroke: #2e9e6b; }
+.plk-dash-ring.is-mid .plk-dash-ring-fill { stroke: #e0a020; }
+.plk-dash-ring.is-bad .plk-dash-ring-fill { stroke: #d6402f; }
+.plk-dash-ring-num { font-size: 26px; font-weight: 700; fill: var(--plk-ink); }
+.plk-dash-ring-unit { font-size: 10px; fill: var(--plk-soft); }
+.plk-dash-areas { flex: 1; min-width: 0; }
+.plk-dash-total { margin: 0 0 4px; }
+.plk-dash-areas ul { margin: 0; }
+.plk-dash-areas li { display: grid; grid-template-columns: 9.5em 1fr 2.2em 4.2em; align-items: center; gap: 6px; margin: 0 0 3px; }
+.plk-dash-bar { height: 6px; background: #e3e8ee; border-radius: 3px; overflow: hidden; }
+.plk-dash-bar span { display: block; height: 100%; background: #1f4e79; }
+.plk-dash-val { text-align: right; font-weight: 600; }
+.plk-dash-trend { font-size: 12px; white-space: nowrap; }
+.plk-dash-trend.is-up { color: var(--plk-pass); }
+.plk-dash-trend.is-down { color: var(--plk-major); }
+.plk-dash-trend.is-same { color: var(--plk-soft); }
+.plk-dash-list { margin: 0 0 0 1.4em; }
+.plk-dash-list li { margin-bottom: 4px; }
+.plk-dash-tag { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.6; padding: 0 6px; border-radius: 3px; color: #fff; }
+.plk-dash-tag.is-major { background: var(--plk-major); }
+.plk-dash-tag.is-minor { background: var(--plk-minor); }
+.plk-dash-tag.is-note { background: #fff; color: var(--plk-soft); border: 1px solid #9fb1c4; }
+.plk-dash-tag.is-pass { background: var(--plk-pass); }
+.plk-dash-more { color: var(--plk-soft); margin: 2px 0 0; }
+.plk-dash-days { display: flex; gap: 6px; align-items: flex-end; margin: 0; }
+.plk-dash-days li { flex: 1; display: flex; flex-direction: column; align-items: center; margin: 0; font-size: 11px; color: var(--plk-soft); }
+.plk-dash-day-bar { display: block; width: 100%; min-height: 2px; background: #1f4e79; border-radius: 2px 2px 0 0; }
+.plk-dash-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid #dcdcde; margin: 14px -12px -12px; padding: 10px 12px; color: var(--plk-soft); }
+@media (max-width: 480px) { .plk-dash-top { flex-direction: column; align-items: flex-start; } }

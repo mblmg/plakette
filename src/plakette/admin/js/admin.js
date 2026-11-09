@@ -1029,6 +1029,17 @@
 			}
 		} );
 		const base = cookieMap();
+		// Web Storage is shared with this admin page (same origin): park it, so the frame really starts empty.
+		const parked = { local: {}, session: {} };
+		[ 'local', 'session' ].forEach( ( area ) => {
+			try {
+				const st = window[ area + 'Storage' ];
+				storageKeys( window, area ).forEach( ( k ) => {
+					parked[ area ][ k ] = st.getItem( k );
+				} );
+				st.clear();
+			} catch ( e ) {}
+		} );
 		const baseLocal = new Set( storageKeys( window, 'local' ) );
 		const baseSession = new Set( storageKeys( window, 'session' ) );
 		const baseIdb = new Set( await idbNames( window ) );
@@ -1095,13 +1106,11 @@
 					killCookie( c.name );
 				}
 			} );
-			result.storage.forEach( ( st ) => {
+			[ 'local', 'session' ].forEach( ( area ) => {
 				try {
-					if ( st.area === 'local' ) {
-						localStorage.removeItem( st.key );
-					} else if ( st.area === 'session' ) {
-						sessionStorage.removeItem( st.key );
-					}
+					const st = window[ area + 'Storage' ];
+					st.clear();
+					Object.keys( parked[ area ] ).forEach( ( k ) => st.setItem( k, parked[ area ][ k ] ) );
 				} catch ( e ) {}
 			} );
 			Object.keys( stash ).forEach( ( n ) => {
@@ -1140,7 +1149,7 @@
 		};
 		const devices = ( st.devices || [] ).map( ( r ) => ( { k: { mobile: 'Smartphone', tablet: 'Tablet', desktop: 'Computer' }[ r.k ] || r.k, n: r.n } ) );
 		return `<section class="plk-panel plk-stats" aria-labelledby="plk-stats-h">
-			<style>.plk-stats-days{display:flex;align-items:flex-end;gap:2px;height:120px;margin:0 0 4px;padding:0;list-style:none;border-bottom:1px solid #8c8f94}.plk-stats-days li{flex:1;height:100%;display:flex;align-items:flex-end}.plk-sbar{display:block;width:100%;min-height:1px;background:#2271b1}.plk-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px}.plk-hbar{display:inline-block;height:.7em;background:#2271b1;vertical-align:middle;max-width:60%}.plk-stats-axis{display:flex;justify-content:space-between;font-size:12px;color:#50575e}</style>
+			<style>.plk-stats-days{display:flex;align-items:flex-end;gap:2px;height:120px;margin:0 0 4px;padding:0;list-style:none;border-bottom:1px solid #8c8f94}.plk-stats-days li{flex:1;height:100%;display:flex;align-items:flex-end}.plk-sbar{display:block;width:100%;min-height:1px;background:#2271b1}.plk-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:16px}.plk-hbar{display:inline-block;height:.7em;background:#2271b1;vertical-align:middle;max-width:60%}.plk-stats th{text-align:left}.plk-stats-axis{display:flex;justify-content:space-between;font-size:12px;color:#50575e}</style>
 			<div class="plk-panel-head"><h2 id="plk-stats-h">Besucher – Plakette-Statistik</h2></div>
 			<p class="plk-panel-note">${ plural( st.total, 'Seitenaufruf', 'Seitenaufrufe' ) } in den letzten ${ st.days } Tagen. Gezählt ohne Cookies und ohne IP-Adresse – deshalb ist keine Einwilligung nötig. Angemeldete Nutzer und Suchmaschinen-Bots zählen nicht.</p>
 			<ul class="plk-stats-days" aria-label="Seitenaufrufe pro Tag">${ bars }</ul>

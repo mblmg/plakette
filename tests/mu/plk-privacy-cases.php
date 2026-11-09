@@ -2,11 +2,17 @@
 /**
  * Test fixture (mu-plugin): switchable privacy scenarios for tests/consent-probe.mjs.
  *   /?plk_case=pixel&on=1|0   Meta pixel in wp_head (an owner who keeps a marketing pixel)
+ *   /?plk_login=1             logs in user 1 (the security fixes rename "admin" and limit logins – the judge needs a session)
  * Only answers requests from the local machine.
  */
 add_action(
 	'init',
 	function () {
+		if ( isset( $_GET['plk_login'] ) && in_array( $_SERVER['REMOTE_ADDR'] ?? '', array( '127.0.0.1', '::1' ), true ) ) {
+			wp_set_auth_cookie( 1, false );
+			wp_safe_redirect( admin_url( 'admin.php?page=plakette' ) );
+			exit;
+		}
 		if ( ! isset( $_GET['plk_case'] ) || ! in_array( $_SERVER['REMOTE_ADDR'] ?? '', array( '127.0.0.1', '::1' ), true ) ) {
 			return;
 		}

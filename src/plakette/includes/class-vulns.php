@@ -284,9 +284,10 @@ class Plakette_Vulns {
 
 	/** After an update or activation: evaluate again with the new versions, fetch new components in a minute. */
 	public static function soon() {
-		if ( get_option( self::OPTION ) ) {
-			self::refresh( 0 ); // no network: just re-match the cached feed against the new versions
+		if ( ! get_option( self::OPTION ) ) {
+			return; // never checked yet: the first audit or the regular cron does it
 		}
+		self::refresh( 0 ); // no network: just re-match the cached feed against the new versions
 		if ( ! wp_next_scheduled( self::NEXT ) ) {
 			wp_schedule_single_event( time() + MINUTE_IN_SECONDS, self::NEXT );
 		}

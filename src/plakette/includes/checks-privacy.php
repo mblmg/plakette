@@ -54,7 +54,7 @@ abstract class Plakette_Privacy_Check extends Plakette_Check {
 	/** "Title (/path/)" of a checked page. */
 	public static function page_label( $post_id ) {
 		if ( ! $post_id ) {
-			return __( 'Startseite', 'plakette' );
+			return __( 'Startseite', 'plakette' ) . ' (/)';
 		}
 		$path = (string) wp_parse_url( (string) get_permalink( $post_id ), PHP_URL_PATH );
 		$q    = (string) wp_parse_url( (string) get_permalink( $post_id ), PHP_URL_QUERY );
@@ -442,9 +442,15 @@ class Plakette_Privacy_Evidence {
 				}
 			}
 		}
+		// VG Wort pixels are usually inserted per post – scan the content, not only the crawled pages.
+		foreach ( $ctx->posts() as $post ) {
+			if ( false !== stripos( (string) $post->post_content, '.met.vgwort.de/' ) ) {
+				$e['disputed']['vg-wort'][] = Plakette_Privacy_Check::page_label( $post->ID );
+			}
+		}
 		// Gravatar: comment avatars appear on every post with comments.
 		if ( get_option( 'show_avatars' ) && ! Plakette_Modules::on( 'local_avatars' ) && Plakette_Privacy_Check::comments_in_use() ) {
-			$add( 'gravatar', true, 'gravatar.com', 'comments', array( __( 'Beiträge mit Kommentaren', 'plakette' ) ) );
+			$add( 'gravatar', true, 'gravatar.com', 'comments' );
 		}
 		$own   = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
 		$hosts = (array) $ctx->facts()['hosts'];
@@ -462,6 +468,10 @@ class Plakette_Privacy_Evidence {
 		$names = array();
 		foreach ( $ctx->cookies() as $name ) {
 			$names[ 'cookie|' . $name ] = array( 'cookie', $name, 'server', __( 'Startseite', 'plakette' ) );
+		}
+		// WordPress' emoji script writes "wpEmojiSettingsSupports" into sessionStorage on every first visit.
+		if ( ! empty( $ctx->facts()['emoji'] ) ) {
+			$names['session|wpEmojiSettingsSupports'] = array( 'session', 'wpEmojiSettingsSupports', 'html', __( 'Startseite', 'plakette' ) );
 		}
 		$path = function ( $url ) {
 			$p = (string) wp_parse_url( (string) $url, PHP_URL_PATH );
@@ -679,7 +689,7 @@ class Plakette_Privacy_Evidence {
 		foreach ( $e['entries'] as $en ) {
 			$kb      = $en['kb'];
 			$line    = $label[ $en['type'] ] . ' „' . $en['name'] . '“ – ' . $kb['label'] . ' – ' . $need[ $kb['necessary'] ];
-			$line   .= 'server' === $en['src'] ? ' ' . __( '(vom Server gesetzt)', 'plakette' ) : '';
+			$line   .= 'server' === $en['src'] ? ' ' . __( '(vom Server gesetzt)', 'plakette' ) : ( 'html' === $en['src'] ? ' ' . __( '(aus dem Seitenquelltext abgeleitet)', 'plakette' ) : '' );
 			if ( 'yes' !== $kb['necessary'] ) {
 				$line .= '. ' . $kb['reason'];
 				if ( 'PHPSESSID' === $en['name'] ) {
@@ -740,8 +750,11 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 				}
 			}
 		}
+		$a['fixes'] = array();
 		foreach ( $e['entries'] as $en ) {
-			if ( 'depends' === $en['kb']['necessary'] || ( 'no' === $en['kb']['necessary'] && '' === $en['kb']['service'] ) ) {
+			if ( 'no' === $en['kb']['necessary'] && ! empty( $en['kb']['fix'] ) ) {
+				$a['fixes'][ $en['kb']['fix'] ] = $en;
+			} elseif ( 'depends' === $en['kb']['necessary'] || ( 'no' === $en['kb']['necessary'] && '' === $en['kb']['service'] ) ) {
 				$a['review'][] = $en['name'];
 			}
 		}
@@ -774,13 +787,17 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 		if ( ! $pages ) {
 			return '';
 		}
-		$total = max( count( $pages ), count( (array) $e['checked'] ) );
+		$total = count( array_unique( array_merge( array_keys( $pages ), (array) $e['checked'] ) ) );
 		// Services on every checked page are named once; the rest per page.
-		$every = null;
-		foreach ( $pages as $p ) {
-			$every = null === $every ? $p[1] : array_values( array_intersect( $every, $p[1] ) );
+		$every   = null;
+		$crawled = 0;
+		foreach ( $pages as $key => $p ) {
+			if ( in_array( $key, (array) $e['checked'], true ) ) {
+				++$crawled;
+				$every = null === $every ? $p[1] : array_values( array_intersect( $every, $p[1] ) );
+			}
 		}
-		$every = count( $pages ) >= $total && count( $pages ) > 1 ? (array) $every : array();
+		$every = $crawled > 1 && $crawled >= count( (array) $e['checked'] ) ? (array) $every : array();
 		$text  = ' ' . sprintf( /* translators: 1: pages, 2: checked pages */ __( 'Einwilligung nötig auf %1$d von %2$d geprüften Seiten.', 'plakette' ), count( $pages ), $total );
 		if ( $every ) {
 			$text .= ' ' . sprintf( __( 'Auf jeder Seite: %s.', 'plakette' ), implode( ', ', $every ) );
@@ -796,6 +813,20 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 			$text .= ' ' . ( $every ? __( 'Zusätzlich', 'plakette' ) : __( 'Seiten', 'plakette' ) ) . ' – ' . implode( '; ', array_slice( $list, 0, 5 ) ) . ( count( $list ) > 5 ? ' …' : '' ) . '.';
 		}
 		return $text;
+	}
+
+	/** Items for storage entries that another check's fix removes. */
+	private static function fix_items( array $fixes ) {
+		$items = array();
+		foreach ( $fixes as $check_id => $en ) {
+			$items[] = array(
+				'id'      => 'check:' . $check_id,
+				'label'   => $en['kb']['measure'],
+				'sub'     => sprintf( __( 'Entfernt „%1$s“ (%2$s).', 'plakette' ), $en['name'], $en['kb']['label'] ),
+				'checked' => true,
+			);
+		}
+		return $items;
 	}
 
 	private static function names( array $ids ) {
@@ -847,6 +878,7 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 		$notes = Plakette_Privacy_Evidence::notes( $e );
 		$tool  = $e['tool'];
 		$need  = array_merge( $a['loads'], $a['held'] );
+		$fixes = $a['fixes'];
 		$keep  = array_values( array_intersect( $a['keep'], $need ) );
 		$keep_banner = array_values(
 			array_filter(
@@ -876,6 +908,15 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 			}
 			return $extra;
 		};
+
+		// Only storage entries a one-click fix removes (e.g. the emoji script) – handled like an avoidable service.
+		if ( ! $need && $fixes ) {
+			$items = self::fix_items( $fixes );
+			return $this->fail(
+				sprintf( __( 'Beim ersten Besuch wird etwas im Browser gespeichert: %s. Das lässt sich ohne Banner lösen – mit den Maßnahmen unten.', 'plakette' ), implode( ', ', array_map( function ( $en ) { return $en['name'] . ' (' . $en['kb']['label'] . ')'; }, $fixes ) ) ),
+				$with( array( 'items' => $items, 'notes' => $notes ) )
+			);
+		}
 
 		// Nothing needs consent.
 		if ( ! $need ) {
@@ -952,7 +993,10 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 		if ( ! $items ) {
 			$extra['kind'] = 'none';
 		}
-		$extra['items'] = $items;
+		$extra['items'] = array_merge( $items, self::fix_items( $fixes ) );
+		if ( $extra['items'] ) {
+			unset( $extra['kind'] );
+		}
 		return $this->fail( $detail, $with( $extra ) );
 	}
 
@@ -975,8 +1019,23 @@ class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 				$need[] = $id;
 			}
 		}
-		if ( ! $need && empty( $picked ) ) {
+		$storage_fixes = array();
+		foreach ( $e['entries'] as $en ) {
+			if ( 'no' === $en['kb']['necessary'] && ! empty( $en['kb']['fix'] ) ) {
+				$storage_fixes[ $en['kb']['fix'] ] = true;
+			}
+		}
+		if ( ! $need && ! $storage_fixes && empty( $picked ) ) {
 			return $this->banner_off( $e, $undo );
+		}
+		foreach ( array_keys( $picked ) as $key ) {
+			if ( 0 === strpos( $key, 'check:' ) && isset( $storage_fixes[ substr( $key, 6 ) ] ) ) {
+				$check = Plakette_Auditor::get( substr( $key, 6 ) );
+				if ( $check ) {
+					$res    = $check->fix( array( 'value' => '', 'items' => array() ), $undo );
+					$done[] = is_wp_error( $res ) ? $res->get_error_message() : $check->title . ': ' . $res;
+				}
+			}
 		}
 
 		$stats  = false;

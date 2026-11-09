@@ -254,11 +254,25 @@ class Plakette_Performance {
 			// The measured LCP image of module 'lcp' is preloaded in wp_head – replace it so nothing loads twice.
 			$html = preg_replace( '#<link\b[^>]*\sdata-plk-lcp\b[^>]*>\s*#i', '', $html, 1 );
 			if ( ! self::has_preload( $html, $preload['href'] ) ) {
-				$html = Plakette_Html::insert_in_head( $html, $preload['tag'] );
+				$html = self::insert_preload( $html, $preload['tag'] );
 			}
 		}
 		$out['html'] = $html;
 		return $out;
+	}
+
+	/**
+	 * Inserts the image preload right after <meta name="viewport"> (else at the start of <head>).
+	 * Before the viewport meta a phone still assumes a 980 px layout viewport: the preload scanner would pick a much
+	 * bigger srcset candidate than the <img> later does – two downloads of the LCP image (measured with Chromium).
+	 */
+	private static function insert_preload( $html, $tag ) {
+		$head_end = stripos( $html, '</head>' );
+		if ( preg_match( '#<meta\b[^>]*\bname=["\']?viewport["\']?[^>]*>#i', $html, $m, PREG_OFFSET_CAPTURE ) && $m[0][1] < $head_end ) {
+			$pos = $m[0][1] + strlen( $m[0][0] );
+			return substr( $html, 0, $pos ) . "\n" . $tag . substr( $html, $pos );
+		}
+		return Plakette_Html::insert_in_head( $html, $tag );
 	}
 
 	private static function img_src( WP_HTML_Tag_Processor $p ) {

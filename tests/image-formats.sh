@@ -32,7 +32,8 @@ rows() { python3 -c "import json,sys; [print('   ', r[:300]) for r in json.load(
 echo "== A: plain JPEGs, before"
 curl -s --max-time 600 "$U/run.php?step=audit" > "$OUT/A1-audit.json"; rows "$OUT/A1-audit.json"
 judge --out "$OUT/A1-chromium.json" $PAGES
-for c in legacy_imm_plugins speed_lcp speed_webp; do curl -s --max-time 600 "$U/run.php?step=audit" > /dev/null; curl -s --max-time 600 "$U/run.php?step=fixall&only=$c" | grep -o "\"$c\": \"[^\"]*\""; done
+curl -s --max-time 900 "$U/run.php?step=audit" > /dev/null
+for c in legacy_imm_plugins speed_lcp speed_webp; do curl -s --max-time 900 "$U/run.php?step=fixall&only=$c" | grep -o "\"$c\": \"[^\"]*\""; done
 echo "== A: after fix"
 curl -s --max-time 600 "$U/run.php?step=audit" > "$OUT/A2-audit.json"; rows "$OUT/A2-audit.json"
 judge --out "$OUT/A2-chromium.json" $PAGES

@@ -130,7 +130,8 @@ class Plakette_Check_Sec_Vulnerabilities extends Plakette_Check {
 			return new WP_Error( 'plakette_vulns', __( 'Der Abgleich mit der Lücken-Datenbank ist nicht geladen.', 'plakette' ) );
 		}
 		Plakette_Vulns::admin_includes();
-		$found = Plakette_Vulns::refresh( 0 )['found']; // current versions, no network
+		Plakette_Vulns::components( true ); // makes sure WordPress' update offers are known (a failed update clears them)
+		$found = Plakette_Vulns::refresh( 0 )['found']; // current versions, no feed request
 		$want  = array();
 		foreach ( (array) ( isset( $req['items'] ) ? $req['items'] : array() ) as $item ) {
 			$id = isset( $item['id'] ) ? (string) $item['id'] : '';

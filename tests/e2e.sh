@@ -44,7 +44,7 @@ print("Behebungen:", len(f.get("fixes", {})), "davon Fehler:", errs or "keine")
 left = {k: v for k, v in st(b).items() if v in ("fail", "warn")}
 print("Nach Behebung noch offen:", left)
 print("Rückgängig gemacht:", len(u.get("undo", {})), "Fehler:", {k: v for k, v in u.get("undo", {}).items() if v != "ok"} or "keine")
-final = {"speed_database", "security_inactive", "security_core_updates", "security_plugin_updates"}  # deletions and updates cannot be undone by design
+final = {"speed_database", "security_inactive", "security_core_updates", "security_plugin_updates", "security_vulnerabilities"}  # deletions and updates cannot be undone by design
 diff = {k: (st(a)[k], st(c)[k]) for k in st(a) if st(a)[k] != st(c)[k] and k not in final}
 print("Abweichung vom Ursprung nach Undo:", diff or "keine")
 log = open(f"{out}/debug.log").read()

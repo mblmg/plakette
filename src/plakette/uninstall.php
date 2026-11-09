@@ -16,6 +16,10 @@ foreach ( (array) $names as $option ) {
 delete_site_transient( 'plakette_release' );
 wp_clear_scheduled_hook( 'plakette_daily' );
 wp_clear_scheduled_hook( 'plakette_vendor_warm' );
+foreach ( array( 'plakette_vulns_cron', 'plakette_vulns_next', 'plakette_weekly_audit' ) as $hook ) {
+	wp_clear_scheduled_hook( $hook );
+}
+delete_metadata( 'user', 0, 'plakette_vulns_dismissed', '', true );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}plakette_log" ); // phpcs:ignore WordPress.DB
 
 // Remove the rule blocks Plakette added to .htaccess.

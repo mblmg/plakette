@@ -400,7 +400,7 @@ class Plakette_Check_Webp extends Plakette_Speed_Check {
 				return $this->warn( sprintf( _n( '%d Bild der Mediathek ist noch nicht umgewandelt.', '%d Bilder der Mediathek sind noch nicht umgewandelt.', count( $todo ), 'plakette' ), count( $todo ) ), array( 'items' => $this->items( $todo ) ) );
 			}
 			if ( $imgs ) {
-				return $this->pass( $who_text . ' ' . __( 'Jeder Browser bekommt ein modernes Format.', 'plakette' ) );
+				return $this->pass( ucfirst( $who_text ) . ' ' . __( 'Jeder Browser bekommt ein modernes Format.', 'plakette' ) );
 			}
 			return $this->pass( __( 'Auf den geprüften Seiten gibt es keine Fotos.', 'plakette' ) );
 		}
@@ -410,7 +410,7 @@ class Plakette_Check_Webp extends Plakette_Speed_Check {
 		if ( $foreign ) {
 			// Another optimiser is at work – Plakette does not run a second one in parallel.
 			return $this->warn(
-				$detail . ' ' . $who_text . ' ' . sprintf( __( 'Prüfe die Einstellungen von %s für diese Bilder (z. B. ob sie schon umgewandelt sind). Plakette schaltet kein zweites Umwandeln parallel dazu ein.', 'plakette' ), implode( ', ', array_keys( $foreign ) ) ),
+				$detail . ' ' . ucfirst( $who_text ) . ' ' . sprintf( __( 'Prüfe, warum %s diese Bilder nicht umwandelt (z. B. noch nicht optimiert, Ordner ausgeschlossen, Bild aus dem Theme). Plakette schaltet kein zweites Umwandeln parallel dazu ein.', 'plakette' ), implode( ', ', array_keys( $foreign ) ) ),
 				array( 'notes' => $notes, 'kind' => 'none' )
 			);
 		}
@@ -482,6 +482,24 @@ class Plakette_Check_Webp extends Plakette_Speed_Check {
 			}
 			$saved += $r['saved'];
 			$r['done'] ? ++$done : ++$left;
+		}
+		// Everything else of the library that is not converted yet (as far as the time allows).
+		if ( ! $left ) {
+			foreach ( Plakette_Modern_Images::todo() as $id ) {
+				if ( microtime( true ) > $deadline ) {
+					++$left;
+					continue;
+				}
+				$existed = metadata_exists( 'post', $id, Plakette_Modern_Images::META );
+				$undo[]  = array( 'postmeta', $id, Plakette_Modern_Images::META, $existed, $existed ? get_post_meta( $id, Plakette_Modern_Images::META, true ) : null );
+				$r       = Plakette_Modern_Images::convert_attachment( $id, $deadline );
+				foreach ( array_keys( $r['created'] ) as $file ) {
+					$undo[] = array( 'file_delete', $file );
+					++$files;
+				}
+				$saved += $r['saved'];
+				$r['done'] ? ++$done : ++$left;
+			}
 		}
 		Plakette_Page_Cache::purge_all();
 		$msg = sprintf( __( '%1$d Bilder umgewandelt (%2$d neue Dateien), %3$s kleiner.', 'plakette' ), $done, $files, self::size( $saved ) );

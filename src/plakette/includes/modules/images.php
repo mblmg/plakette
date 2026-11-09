@@ -7,7 +7,7 @@
  *    the AVIF copy additionally only when it is smaller than the WebP copy (the browser picks AVIF first).
  *    Every written file is validated (RIFF/WEBP resp. ftyp avif header, > 0 bytes) – some AVIF encoders (e.g. libavif
  *    in PHP-WASM) report success but write nothing for bigger images.
- *    New uploads: wp_generate_attachment_metadata (time-limited, the rest via a single cron event).
+ *    New uploads: wp_update_attachment_metadata (time-limited, the rest via a single cron event).
  *    Existing images: the fix of the check speed_webp in batches; the undo deletes exactly the files Plakette wrote.
  *    Postmeta _plakette_modern = [ files => [ relative path => bytes ] (written by Plakette), saved, time, done ].
  *
@@ -79,7 +79,8 @@ class Plakette_Modern_Images {
 		if ( ! self::active() ) {
 			return;
 		}
-		add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'on_upload' ), 99, 2 );
+		// Every metadata update (new upload, regenerated sizes, edited image, site icon …) – fresh copies are skipped.
+		add_filter( 'wp_update_attachment_metadata', array( __CLASS__, 'on_upload' ), 99, 2 );
 		Plakette_Html::add( 'modern_images', array( __CLASS__, 'transform' ), 7 );
 	}
 
@@ -261,7 +262,7 @@ class Plakette_Modern_Images {
 
 	/** New uploads: convert right away (time-limited), the rest in the background. */
 	public static function on_upload( $meta, $id ) {
-		if ( ! wp_attachment_is_image( $id ) || ! preg_match( '#^image/(jpe?g|png)$#', (string) get_post_mime_type( $id ) ) ) {
+		if ( ! is_array( $meta ) || empty( $meta['file'] ) || ! wp_attachment_is_image( $id ) || ! preg_match( '#^image/(jpe?g|png)$#', (string) get_post_mime_type( $id ) ) ) {
 			return $meta;
 		}
 		$r = self::convert_attachment( $id, microtime( true ) + 8, $meta );

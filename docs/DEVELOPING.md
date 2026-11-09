@@ -74,6 +74,7 @@ scripts, styles, iframes, links (href,text,label), viewport, generator, hosts (f
 | `checks-security.php`, `modules/security.php` | security_* | sec_headers, no_xmlrpc, no_user_enum, login_limit, hide_errors, no_generator, mixed_content |
 | `checks-legal.php`, `modules/legal.php` | legal_*, a11y_lang, a11y_zoom, a11y_form_labels | legal_links, shop_button, a11y_lang, a11y_zoom, a11y_form_labels |
 | `checks-toolkit.php`, `modules/performance.php`, `modules/fonts.php` | speed_image_dims, privacy_cdn, a11y_animations, a11y_link_names (+ speed_lcp, privacy_google_fonts) | local_fonts, lcp, lcp_auto, lcp_webp, cdn_local, img_dims, a11y_anim, link_names |
+| `class-vulns.php`, `checks-vulns.php`, `modules/vulns-boot.php`, `class-dashboard.php` | security_vulnerabilities (Abgleich mit WPVulnerability/CVE), Dashboard-Widget, Admin-Hinweis | – (Einstellungen „vulns“, „dashboard“) |
 | `checks-seo-helper.php`, `modules/seo-helper.php`, `modules/breakdance.php` | seo_company_schema, seo_image_sitemap, seo_featured_images, legacy_imm_plugins | company_schema, image_sitemap (+ Einstellungen „breakdance“) |
 
 - Datenschutz-Messung im Browser (admin.js › privacyProbe) → REST `/privacy-probe` → Option `plakette_privacy_probe`; Wissensbasis Cookies/Speicher: `Plakette_Services::storage_kb()`, Plugins je Dienst: `::plugins()`. Externer Prüfer: `node tests/consent-probe.mjs judge [--php 8.4] [--ui]`.
