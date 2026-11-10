@@ -1,7 +1,7 @@
 # Plakette – Website-Hauptuntersuchung (WordPress-Plugin)
 
 Von **i-make.media | Magnus Brühl**. Plakette prüft eine WordPress-Website wie bei der Hauptuntersuchung.
-Sie hat **78 Prüfpunkte** in vier Bereichen: **Datenschutz**, **Sicherheit** (mit Recht/DSGVO, Cookie-Banner und
+Sie hat **79 Prüfpunkte** in vier Bereichen: **Datenschutz**, **Sicherheit** (mit Recht/DSGVO, Cookie-Banner und
 Barrierefreiheit nach BFSG), **Geschwindigkeit** und **SEO**. Jeden Mangel erklärt sie in einfachen Worten, und fast
 jeden behebt sie auf Knopfdruck. Jede Änderung steht im Protokoll und lässt sich rückgängig machen.
 
@@ -19,7 +19,7 @@ Weitere Ansichten: [Cookie-Banner](docs/screenshots/cookie-banner.png) · [Zwei-
 
 Per WP-CLI: `wp plugin install https://github.com/mblmg/plakette/releases/latest/download/plakette.zip --activate`
 
-Voraussetzungen: WordPress 6.5 oder neuer, PHP 7.4 bis 8.5.
+Voraussetzungen: WordPress 6.5 oder neuer, PHP 8.1 oder neuer.
 
 ## Updates
 Plakette sieht alle 6 Stunden auf GitHub nach neuen Releases. Sie erscheinen unter *Plugins* und werden automatisch
@@ -41,6 +41,15 @@ define( 'PLAKETTE_GITHUB_TOKEN', 'github_pat_…' ); // Fine-grained Token, nur 
 | **SEO** | Sichtbarkeit, Permalinks, Sitemap, robots.txt, Titel, Beschreibungen, Open Graph, strukturierte Daten, Firmenprofil (LocalBusiness), Beitragsbilder, Bild-Sitemap (Yoast/Rank Math), Alternativtexte, H1, kaputte Links, Beispielinhalte | Vorschläge zum Bearbeiten, dann ein Klick |
 
 Außerdem:
+- **Bannerfrei statt Banner-Pflicht:** Plakette misst im Browser, was beim ersten Besuch gespeichert und
+  verschickt wird. Danach sagt sie klar, ob ein Cookie-Banner nötig ist und mit welchen Maßnahmen er wegfällt.
+  Dazu gehört eine eigene Statistik ohne Cookies als Ersatz für Google Analytics. Ein überflüssiger Banner wird
+  erkannt. Wo ein Banner nötig ist, erscheint er nur auf den betroffenen Seiten.
+- **Sicherheitslücken:** täglicher Abgleich von WordPress, Plugins und Themes mit der CVE-Datenbank (WPVulnerability),
+  mit roter Warnung im Admin-Bereich und E-Mail.
+- **Dashboard-Widget** mit Punktzahl, wichtigsten Mängeln, Sicherheitslücken und Besucherzahlen.
+- **AVIF und WebP** mit Rückfall auf das Original. Bilder, die EWWW, CompressX & Co. schon optimiert ausliefern,
+  werden erkannt und nicht bemängelt.
 - **Firmendaten einmal eintragen:** Daraus entstehen Impressum, Datenschutzerklärung und das Firmenprofil für Google
   (Adresse, Öffnungszeiten, Angebote).
 - **Cookie-Banner:** „Alle akzeptieren“ und „Nur notwendige“ sind gleich groß, Einstellungen gibt es je Kategorie.
@@ -55,22 +64,21 @@ Die Rechtstexte erzeugt Plakette aus dem, was sie auf der Website findet. Sie er
 Bitte lies sie nach dem Erstellen einmal durch.
 
 ## Getestet
-Testseite mit absichtlich eingebauten Mängeln, echtes WordPress (Playground), PHP 7.4 und 8.3 (`tests/e2e.sh`):
+Testseite mit absichtlich eingebauten Mängeln, echtes WordPress (Playground), PHP 8.1 und 8.4 (`tests/e2e.sh`):
 
 | | vorher | nach „alles beheben“ |
 |---|---|---|
-| Gesamt | 14 | **93** |
-| Datenschutz | 11 | 100 |
-| Sicherheit | 15 | 89 (offen: HTTPS, Apache-Regeln und Backups – im Testsystem nicht möglich) |
-| Geschwindigkeit | 9 | 93 |
+| Gesamt | 12 | **89** |
+| Datenschutz | 7 | 100 |
+| Sicherheit | 10 | 77 (offen: absichtlich eingebaute Lücke ohne Download, HTTPS/Apache/Backups – im Testsystem nicht möglich) |
+| Geschwindigkeit | 18 | 93 |
 | SEO | 16 | 100 |
-| Serverantwort | 888 ms | 59 ms |
+| Serverantwort | 876 ms | 54 ms |
 
-- Die 59 Behebungen liefen ohne Fehler. Danach wurde alles rückgängig gemacht, und das Prüfergebnis war identisch mit
-  dem Ursprungszustand. Ausgenommen ist, was absichtlich endgültig ist: Löschen, Updates, Datenbank aufräumen.
-- 0 PHP-Warnungen aus dem Plugin, unter PHP 7.4 und PHP 8.3.
-- **Nicht getestet** (gibt es im Testsystem nicht): `.htaccess`-Regeln unter Apache, HTTPS/HSTS, echte Plugin- und
-  Core-Updates, WooCommerce, Yoast/Rank Math, ein echtes Breakdance.
+- Nach „alles rückgängig“ ist das Prüfergebnis identisch mit dem Ursprung (außer Löschen/Updates). 0 PHP-Warnungen aus dem Plugin.
+- Unabhängige Prüfer: Ein frischer Chromium misst Cookies, Speicher und fremde Server (`tests/consent-probe.mjs`,
+  7 Szenarien) sowie Bildformate und Bytes (`tests/image-formats.mjs`: −55 bis −58 %, 0 kaputte Bilder, auch ohne AVIF/WebP-Unterstützung).
+- Der Abgleich der Sicherheitslücken ist mit 59 Fällen getestet (`tests/vulns-matcher.php`) und live gegen bekannte CVEs geprüft.
 
 ## Entwickeln und veröffentlichen
 - Aufbau und Konventionen: [`docs/DEVELOPING.md`](docs/DEVELOPING.md)

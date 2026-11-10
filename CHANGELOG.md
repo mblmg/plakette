@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.1.0] - 2026-11-10
+
+### Neu
+- **Bannerfreie Website als Ziel:** Die Prüfung „Cookie-Banner nötig?“ (Bereich Datenschutz) arbeitet mit Beweisen.
+  Eine Messung im Browser zeigt, was beim ersten Besuch gespeichert und an fremde Server geschickt wird. Plakette
+  sagt dann eindeutig: kein Banner nötig, Banner nötig und vermeidbar (mit Maßnahmen zum Anklicken) oder Banner
+  überflüssig (lässt sich abschalten).
+- **Plakette-Statistik:** Besucherzahlen ohne Cookies und ohne Einwilligung, als Ersatz für Google Analytics.
+- **„Dienst entfernen“:** nimmt Tracking-Skripte aus der Seite oder deaktiviert das Plugin, das sie einfügt.
+- **Cookie-Banner nur dort, wo er nötig ist:** Seiten ohne einwilligungspflichtige Inhalte bleiben bannerfrei.
+- **VG-Wort-Zählpixel** wird erkannt und mit Quellenangabe bewertet.
+- **Sicherheitslücken:** täglicher Abgleich von WordPress, allen Plugins und Themes mit der CVE-Datenbank von
+  WPVulnerability (CVE/NVD, Wordfence, Patchstack, WPScan). Bei Treffern gibt es einen roten Hinweis im ganzen
+  Admin-Bereich, eine Zahl am Menüpunkt und eine E-Mail. Plakette behebt Lücken per Update oder deaktiviert das
+  Plugin, wenn es kein Update gibt.
+- **Dashboard-Widget:** Punktzahl je Bereich, die wichtigsten offenen Punkte, Sicherheitslücken und Besucher.
+  Dazu eine wöchentliche automatische Prüfung.
+- **AVIF:** AVIF- und WebP-Kopien aller Bilder. Sie werden mit Rückfall auf das Original ausgeliefert, damit
+  ältere Browser nie ein kaputtes Bild sehen. Im Test waren die Bilder 55–58 % kleiner.
+
+### Geändert
+- Bildprüfungen bewerten, was Besucher wirklich herunterladen: EWWW, CompressX, ShortPixel, Imagify und andere
+  werden erkannt, auch Umschreibungen auf dem Server. Keine Fehlalarme mehr bei Seiten, die längst WebP/AVIF ausliefern.
+- „Beiträge und Seiten ohne Beschreibung“ listet alle betroffenen Beiträge mit Links zum Ansehen und Bearbeiten.
+  Mit Yoast, Rank Math, SEOPress oder The SEO Framework speichert Plakette die Beschreibungen direkt dort.
+- DSGVO, Cookie-Banner und Datenschutzerklärung gehören jetzt zum Bereich **Datenschutz**.
+- Mindestens PHP 8.1 (PHP 7.4 und 8.0 bekommen keine Sicherheitsupdates mehr).
+- Links aus Dashboard und Hinweisen öffnen direkt den passenden Prüfpunkt.
+
 ## [1.0.0] - 2026-11-09
 
 Erste Version als „Plakette – Website-Hauptuntersuchung“. Entstanden aus „Prüfstand – SEO & Ladezeit“ und fasst

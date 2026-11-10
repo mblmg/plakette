@@ -1318,6 +1318,19 @@
 		}
 	}
 
+	// Links from the dashboard widget / notices: admin.php?page=plakette#plk-row-<id> opens and shows that row.
+	function jumpToHash() {
+		const m = /^#plk-row-([a-z0-9_]+)$/.exec( window.location.hash || '' );
+		if ( m && byId( m[ 1 ] ) ) {
+			const btn = document.createElement( 'button' );
+			btn.dataset.action = 'jump';
+			btn.dataset.id = m[ 1 ];
+			onClick( { target: btn } );
+		}
+	}
+	window.addEventListener( 'hashchange', jumpToHash );
+	setTimeout( jumpToHash, 0 );
+
 	app.addEventListener( 'click', onClick );
 	app.addEventListener( 'input', onInput );
 	app.addEventListener( 'change', onChange );

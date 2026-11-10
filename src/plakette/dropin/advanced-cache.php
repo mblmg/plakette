@@ -57,7 +57,8 @@ defined( 'ABSPATH' ) || exit;
 	$file = WP_CONTENT_DIR . '/cache/plakette/' . ( $https ? 'https' : 'http' ) . '/' . str_replace( ':', '_', $host ) . '/' . trim( $path, '/' );
 	$file = rtrim( $file, '/' ) . '/index.html';
 
-	if ( is_readable( $file ) && ( time() - filemtime( $file ) ) < 36000 ) {
+	$mtime = is_readable( $file ) ? @filemtime( $file ) : false; // the file can be purged in between
+	if ( $mtime && ( time() - $mtime ) < 36000 ) {
 		header( 'Content-Type: text/html; charset=UTF-8' );
 		header( 'X-Plakette-Cache: HIT' );
 		// Security headers the plugin sends on normal requests (written by the feature "Sicherheits-Header").
@@ -70,13 +71,13 @@ defined( 'ABSPATH' ) || exit;
 				}
 			}
 		}
-		header( 'Last-Modified: ' . gmdate( 'D, d M Y H:i:s', filemtime( $file ) ) . ' GMT' );
+		header( 'Last-Modified: ' . gmdate( 'D, d M Y H:i:s', $mtime ) . ' GMT' );
 		$accept = isset( $_SERVER['HTTP_ACCEPT_ENCODING'] ) ? $_SERVER['HTTP_ACCEPT_ENCODING'] : '';
 		if ( file_exists( WP_CONTENT_DIR . '/plakette-gzip.flag' ) && false !== stripos( $accept, 'gzip' ) && function_exists( 'ob_gzhandler' ) && ! ini_get( 'zlib.output_compression' ) ) {
 			ob_start( 'ob_gzhandler' );
 		}
 		if ( 'HEAD' !== $method ) {
-			readfile( $file );
+			@readfile( $file );
 		}
 		exit;
 	}
