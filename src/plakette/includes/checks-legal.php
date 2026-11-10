@@ -302,6 +302,64 @@ class Plakette_Legal_Pages {
 		return false;
 	}
 
+	/**
+	 * Text of a page as visitors see it: the page fetched from the front end (shortcodes like eRecht24,
+	 * page builders and blocks are rendered), plus the rendered content as fallback, plus the raw content.
+	 * E-mail addresses that only exist as mailto: links or Cloudflare-protected addresses are added as text.
+	 *
+	 * @return array [ string text, bool from_frontend ]
+	 */
+	public static function page_text( $post_id ) {
+		static $cache = array();
+		$post_id = (int) $post_id;
+		if ( isset( $cache[ $post_id ] ) ) {
+			return $cache[ $post_id ];
+		}
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return array( '', false );
+		}
+		$html  = '';
+		$front = false;
+		$res   = Plakette_Crawler::fetch( get_permalink( $post ) );
+		if ( $res['ok'] && $res['status'] < 400 && '' !== $res['body'] ) {
+			$html = $res['body'];
+			// Only the main content when the theme marks it; otherwise the whole body (header/footer included).
+			if ( preg_match( '#<main\b[^>]*>(.*)</main>#is', $html, $m ) ) {
+				$html = $m[1];
+			} elseif ( preg_match( '#<body\b[^>]*>(.*)</body>#is', $html, $m ) ) {
+				$html = $m[1];
+			}
+			$front = true;
+		} else {
+			// No loopback request possible: render the content the way WordPress would.
+			$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
+			setup_postdata( $post );
+			ob_start();
+			$rendered = apply_filters( 'the_content', $post->post_content ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals
+			$echoed   = ob_get_clean();
+			wp_reset_postdata();
+			$html = $echoed . ' ' . $rendered;
+		}
+		$extra = '';
+		if ( preg_match_all( '#mailto:([^"\'?\s>]+)#i', $html, $mm ) ) {
+			$extra .= ' ' . implode( ' ', array_map( 'rawurldecode', $mm[1] ) );
+		}
+		// Cloudflare e-mail protection: data-cfemail="hex" (first byte is the XOR key).
+		if ( preg_match_all( '#data-cfemail="([0-9a-f]+)"#i', $html, $cf ) ) {
+			foreach ( $cf[1] as $hex ) {
+				$key  = hexdec( substr( $hex, 0, 2 ) );
+				$mail = '';
+				for ( $i = 2; $i < strlen( $hex ); $i += 2 ) {
+					$mail .= chr( hexdec( substr( $hex, $i, 2 ) ) ^ $key );
+				}
+				$extra .= ' ' . $mail;
+			}
+		}
+		$cache[ $post_id ] = array( self::plain_text( $html ) . ' ' . $extra . ' ' . self::plain_text( $post->post_content ), $front );
+		return $cache[ $post_id ];
+	}
+
 	public static function plain_text( $content ) {
 		// Tags become spaces, so "7<br>79098" does not turn into "779098".
 		$content = (string) preg_replace( '#<(script|style)\b.*?</\1>#is', ' ', (string) $content );
@@ -645,7 +703,7 @@ class Plakette_Check_Legal_Imprint extends Plakette_Check {
 				)
 			);
 		}
-		$text  = Plakette_Legal_Pages::plain_text( get_post( $page )->post_content );
+		list( $text, $front ) = Plakette_Legal_Pages::page_text( $page );
 		$notes = array();
 		if ( ! preg_match( '/[A-Z0-9._%+-]+(@|\s*[\[(]\s*(at|ät)\s*[\])]\s*)[A-Z0-9.-]+(\.|\s*[\[(]\s*(dot|punkt)\s*[\])]\s*)[A-Z]{2,}/i', $text ) ) {
 			$notes[] = __( 'Keine E-Mail-Adresse gefunden – sie ist Pflicht (schnelle elektronische Kontaktaufnahme).', 'plakette' );
@@ -655,6 +713,9 @@ class Plakette_Check_Legal_Imprint extends Plakette_Check {
 			$notes[] = __( 'Keine fünfstellige Postleitzahl gefunden – es muss eine vollständige Anschrift (kein Postfach) dastehen.', 'plakette' );
 		}
 		if ( $notes ) {
+			if ( ! $front ) {
+				$notes[] = __( 'Hinweis: Plakette konnte die Seite nicht so abrufen, wie Besucher sie sehen, und hat den Inhalt selbst zusammengesetzt. Prüfe die Seite im Browser.', 'plakette' );
+			}
 			return $this->warn(
 				sprintf( __( 'Im Impressum „%s“ fehlen vermutlich Pflichtangaben.', 'plakette' ), $title ),
 				array(
@@ -810,8 +871,8 @@ class Plakette_Check_Legal_Privacy_Coverage extends Plakette_Check {
 		if ( ! $ctx->home_ok() ) {
 			return $this->no_html( $ctx );
 		}
-		$text     = Plakette_Legal_Pages::plain_text( get_post( $page )->post_content );
-		$services = Plakette_Legal_Pages::services( $ctx );
+		list( $text ) = Plakette_Legal_Pages::page_text( $page );
+		$services     = Plakette_Legal_Pages::services( $ctx );
 		$items    = array();
 		foreach ( $services as $id => $s ) {
 			if ( ! Plakette_Legal_Pages::mentioned( $text, $s ) ) {

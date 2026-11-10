@@ -1,7 +1,7 @@
 # Plakette – Aufbau für Entwickler
 
 Plugin-Quelle: `src/plakette/` (Präfix `Plakette_`, Optionen `plakette_*`, CSS `plk-`, Textdomain `plakette`).
-Mindestens **PHP 8.1** (bis 8.5): `str_contains`, `match`, Enums, `readonly` usw. sind erlaubt. Oberfläche und alle Texte auf **Deutsch, Du-Form, einfach**
+Mindestens **PHP 8.2** (bis 8.5) – nur Versionen mit Sicherheitsupdates: `str_contains`, `match`, Enums, `readonly`-Klassen usw. sind erlaubt. Oberfläche und alle Texte auf **Deutsch, Du-Form, einfach**
 (für Einsteiger: was ist das, warum wichtig). Rechtstexte für Besucher (Impressum, Datenschutzerklärung) in **Sie-Form**.
 
 ## Ablauf
@@ -64,7 +64,7 @@ scripts, styles, iframes, links (href,text,label), viewport, generator, hosts (f
 
 ## Testen
 - `tools/lint.sh` – PHP-Syntax aller Dateien (PHP-WASM).
-- `tests/e2e.sh 8.4` bzw. `8.1` – echtes WordPress (Playground): Testseite mit Mängeln anlegen, prüfen, alles beheben,
+- `tests/e2e.sh 8.4` bzw. `8.2` – echtes WordPress (Playground): Testseite mit Mängeln anlegen, prüfen, alles beheben,
   prüfen, alles rückgängig machen, vergleichen. Ergebnisse in `tests/out/`.
 
 ## Dateien und Modul-Schlüssel

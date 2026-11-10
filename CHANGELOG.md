@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.1] - 2026-11-10
+
+### Behoben
+- Impressum und Datenschutzerklärung werden so geprüft, wie Besucher sie sehen. Plakette ruft die Seite im
+  Frontend ab, Shortcodes wie von eRecht24, Page-Builder und Blöcke werden also mitgelesen. E-Mail-Adressen nur
+  als `mailto:`-Link oder hinter Cloudflare-Schutz zählen ebenfalls. Damit gibt es keine Fehlbefunde mehr wie
+  „E-Mail und PLZ fehlen“, obwohl sie im eingebundenen Impressum stehen.
+
+### Geändert
+- Mindestens PHP 8.2: Versionen ohne Sicherheitsupdates (8.1 und älter) werden nicht mehr unterstützt.
+
 ## [1.1.0] - 2026-11-10
 
 ### Neu

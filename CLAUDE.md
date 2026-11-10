@@ -46,9 +46,9 @@ domains and takes it online/offline in the project's **Website** tab; `studio si
 
 - Plugin „Plakette – Website-Hauptuntersuchung“ (früher Prüfstand) in `src/plakette/` (German UI, du-form; legal texts for visitors Sie-form).
   Author „i-make.media | Magnus Brühl“. Areas: privacy (Datenschutz), security (Sicherheit incl. Recht/DSGVO/Cookie-Banner/BFSG), speed, seo.
-- Architecture + conventions: `docs/DEVELOPING.md`. Requires PHP ≥ 8.1. Lint: `tools/lint.sh` (PHP-WASM). Build zip: `tools/build.sh` → `exports/plakette.zip`.
+- Architecture + conventions: `docs/DEVELOPING.md`. Requires PHP ≥ 8.2 (only versions with security support; raise when 8.2 hits EOL end of 2026). Lint: `tools/lint.sh` (PHP-WASM). Build zip: `tools/build.sh` → `exports/plakette.zip`.
 - Distribution: GitHub repo `mblmg/plakette` (= this project), tag `vX.Y.Z` → `.github/workflows/release.yml` builds `plakette.zip` release asset;
   `includes/class-updater.php` (Update URI header) auto-updates installs. Prepare a version: `tools/release.sh X.Y.Z [--push]`.
-- Test against real WordPress: `tests/e2e.sh 8.4` (also 8.1) (Playground; needs ≥2 workers for loopback). Parallel runs: `PORT=94xx TAG=name tests/e2e.sh 8.3`.
+- Test against real WordPress: `tests/e2e.sh 8.4` (also 8.2) (Playground; needs ≥2 workers for loopback). Parallel runs: `PORT=94xx TAG=name tests/e2e.sh 8.3`.
   Per-topic defects: `tests/seed-*.php`, `tests/mu/plk-*.php`.
 - Never name a DB column `undo` (MySQL reserved word – broke the log table once).

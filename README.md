@@ -19,7 +19,7 @@ Weitere Ansichten: [Cookie-Banner](docs/screenshots/cookie-banner.png) · [Zwei-
 
 Per WP-CLI: `wp plugin install https://github.com/mblmg/plakette/releases/latest/download/plakette.zip --activate`
 
-Voraussetzungen: WordPress 6.5 oder neuer, PHP 8.1 oder neuer.
+Voraussetzungen: WordPress 6.5 oder neuer, PHP 8.2 oder neuer (ältere Versionen bekommen keine Sicherheitsupdates mehr).
 
 ## Updates
 Plakette sieht alle 6 Stunden auf GitHub nach neuen Releases. Sie erscheinen unter *Plugins* und werden automatisch
@@ -64,7 +64,7 @@ Die Rechtstexte erzeugt Plakette aus dem, was sie auf der Website findet. Sie er
 Bitte lies sie nach dem Erstellen einmal durch.
 
 ## Getestet
-Testseite mit absichtlich eingebauten Mängeln, echtes WordPress (Playground), PHP 8.1 und 8.4 (`tests/e2e.sh`):
+Testseite mit absichtlich eingebauten Mängeln, echtes WordPress (Playground), PHP 8.2 und 8.4 (`tests/e2e.sh`):
 
 | | vorher | nach „alles beheben“ |
 |---|---|---|

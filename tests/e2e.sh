@@ -21,6 +21,7 @@ trap stop EXIT
 for i in $(seq 1 120); do [ "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$PORT/)" = "200" ] && break; sleep 2; done
 U=http://127.0.0.1:$PORT/plk-tests
 curl -s $U/seed.php
+curl -s $U/tools/pagetext.php | tee "$OUT/pagetext.txt"
 step() { curl -s --max-time 600 "$U/run.php?step=$1" > "$OUT/$2.json"; }
 step audit 1-before
 step fixall 2-fix
