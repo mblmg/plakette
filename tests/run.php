@@ -75,6 +75,41 @@ if ( 'audit' === $step ) {
 			$out['undo'][ $run['check_id'] ] = is_wp_error( $r ) ? 'ERROR ' . $r->get_error_message() : 'ok';
 		}
 	}
+} elseif ( 'features' === $step ) {
+	// Fixed features ("Feste Funktionen", docs/DEVELOPING.md): must never get lost in a rewrite. 'missing' must stay empty.
+	$missing = array();
+	$need    = function ( $ok, $what ) use ( &$missing ) {
+		if ( ! $ok ) {
+			$missing[] = $what;
+		}
+	};
+	// --- preload options (Einstellungen › Bilder und lokale Kopien)
+	$fields = array();
+	foreach ( Plakette_Settings::state() as $sec ) {
+		foreach ( $sec['fields'] as $f ) {
+			$fields[ $sec['id'] . '.' . $f['key'] ] = $f['type'];
+		}
+	}
+	foreach ( array( 'performance.preload_fonts' => 'toggle', 'performance.preload_fonts_max' => 'number', 'performance.preload_cdn' => 'toggle', 'performance.preload_extra' => 'textarea', 'stats.enabled' => 'toggle' ) as $key => $type ) {
+		$need( isset( $fields[ $key ] ) && $type === $fields[ $key ], 'setting ' . $key );
+	}
+	$before = get_option( Plakette_Settings::OPTION );
+	Plakette_Settings::save( 'performance', array( 'preload_fonts' => false, 'preload_cdn' => true, 'preload_extra' => "/wp-content/uploads/a.woff2\nhttps://fremd.example/b.js" ) );
+	$vendor = wp_get_upload_dir()['baseurl'] . '/' . Plakette_Performance::DIR_NAME . '/x-lib.min.js';
+	$html   = Plakette_Preload::transform( '<html><head><meta charset="utf-8"></head><body><script src="' . $vendor . '"></script></body></html>' );
+	$need( false !== strpos( $html, 'a.woff2" as="font" type="font/woff2" crossorigin' ), 'preload of extra font' );
+	$need( false !== strpos( $html, 'x-lib.min.js" as="script"' ), 'preload of local CDN file' );
+	$need( false === strpos( $html, 'fremd.example' ), 'foreign hosts are never preloaded' );
+	$need( false === apply_filters( 'plakette_fonts_preload', true ) || ! Plakette_Preload::options()['preload_fonts'], 'font preload can be switched off' );
+	false === $before ? delete_option( Plakette_Settings::OPTION ) : update_option( Plakette_Settings::OPTION, $before, false );
+	Plakette_Settings::flush_cache();
+	// --- areas
+	$need( array( 'legal', 'security', 'speed', 'seo' ) === array_keys( Plakette_Auditor::areas() ), 'areas legal/security/speed/seo' );
+	foreach ( array( 'legal_imprint', 'legal_privacy_policy', 'privacy_consent', 'a11y_zoom' ) as $id ) {
+		$c = Plakette_Auditor::get( $id );
+		$need( $c && 'legal' === $c->area, $id . ' in area legal' );
+	}
+	$out['missing'] = $missing;
 } elseif ( 'state' === $step ) {
 	$out['modules'] = get_option( 'plakette_modules' );
 	foreach ( array( 'blog_public', 'permalink_structure', 'blogdescription', 'wp_attachment_pages_enabled', 'site_icon', 'home' ) as $o ) {

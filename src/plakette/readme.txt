@@ -5,15 +5,16 @@ Plugin URI: https://github.com/mblmg/plakette
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 1.1.1
+Stable tag: 1.2.0
 License: GPLv2 or later
 
-Die Hauptuntersuchung für deine Website: Datenschutz, Sicherheit (inkl. Recht, DSGVO, Cookie-Banner, Barrierefreiheit), Geschwindigkeit und SEO – jeden Mangel mit einem Klick beheben, jederzeit rückgängig.
+Die Hauptuntersuchung für deine Website: Rechtliches (Impressum, Datenschutz/DSGVO, Cookie-Banner, Barrierefreiheit), Sicherheit, Geschwindigkeit und SEO – jeden Mangel mit einem Klick beheben, jederzeit rückgängig.
 
 == Beschreibung ==
 
-* 78 Prüfpunkte in vier Bereichen: Datenschutz, Sicherheit, Geschwindigkeit, SEO.
-* Eigener Cookie-Banner nach TDDDG/DSGVO, Zwei-Klick-Platzhalter für Videos und Karten, Schriften und CDN-Dateien lokal.
+* 78 Prüfpunkte in vier Bereichen: Rechtliches, Sicherheit, Geschwindigkeit, SEO.
+* Eigener Cookie-Banner nach TDDDG/DSGVO, Zwei-Klick-Platzhalter für Videos und Karten, Schriften und CDN-Dateien lokal – auf Wunsch vorgeladen (Preload).
+* Besucherstatistik ohne Cookies und ohne Einwilligung (Einstellungen › Besucherstatistik).
 * Impressum (§ 5 DDG) und Datenschutzerklärung aus Firmendaten und erkannten Diensten.
 * Sicherheits-Härtung: Login-Sperre, Sicherheits-Header, Sicherheitsschlüssel, Updates, Benutzernamen-Schutz u. v. m.
 * Barrierefreiheit (BFSG): Sprache, Zoom, Formular- und Link-Beschriftungen.

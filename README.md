@@ -1,8 +1,8 @@
 # Plakette – Website-Hauptuntersuchung (WordPress-Plugin)
 
 Von **i-make.media | Magnus Brühl**. Plakette prüft eine WordPress-Website wie bei der Hauptuntersuchung.
-Sie hat **79 Prüfpunkte** in vier Bereichen: **Datenschutz**, **Sicherheit** (mit Recht/DSGVO, Cookie-Banner und
-Barrierefreiheit nach BFSG), **Geschwindigkeit** und **SEO**. Jeden Mangel erklärt sie in einfachen Worten, und fast
+Sie hat **79 Prüfpunkte** in vier Bereichen: **Rechtliches** (Impressum, Datenschutz/DSGVO, Cookie-Banner und
+Barrierefreiheit nach BFSG), **Sicherheit**, **Geschwindigkeit** und **SEO**. Jeden Mangel erklärt sie in einfachen Worten, und fast
 jeden behebt sie auf Knopfdruck. Jede Änderung steht im Protokoll und lässt sich rückgängig machen.
 
 Plakette enthält auch alle Funktionen der Plugins „i-make.media Toolkit for Breakdance“ und „SEO-Helfer für
@@ -33,10 +33,10 @@ define( 'PLAKETTE_GITHUB_TOKEN', 'github_pat_…' ); // Fine-grained Token, nur 
 ## Was geprüft und behoben wird
 | Bereich | Prüfungen (Auswahl) | Behebung |
 |---|---|---|
-| **Datenschutz** | fremde Server im Überblick, YouTube/Vimeo/Maps ohne Einwilligung, Google Fonts, CDN-Dateien (unpkg, jsDelivr …), Gravatar, volle IP-Adressen in Kommentaren, Datenschutzhinweis am Kommentarformular | Zwei-Klick-Platzhalter, Schriften und Skripte lokal, lokale Profilbilder, IPs kürzen – ein Klick |
+| **Rechtliches** – Datenschutz | fremde Server im Überblick, YouTube/Vimeo/Maps ohne Einwilligung, Google Fonts, CDN-Dateien (unpkg, jsDelivr …), Gravatar, volle IP-Adressen in Kommentaren, Datenschutzhinweis am Kommentarformular | Zwei-Klick-Platzhalter, Schriften und Skripte lokal, lokale Profilbilder, IPs kürzen – ein Klick |
 | **Sicherheit** | Updates (WordPress, Plugins, Themes, automatisch), Sicherheitsschlüssel, Login-Sperre, Sicherheits-Header, gemischte Inhalte, Benutzernamen-Ausspähung, XML-RPC, „admin“-Benutzer, Datei-Editor, Fehlerausgaben, öffentliches debug.log, Verzeichnislisten, offene Registrierung, Versionsangaben, ungenutzte Plugins, Backups, HTTPS, PHP-Version | ein Klick; Server-Themen als fertige Nachricht an den Hoster |
-| **Recht & DSGVO** (in Sicherheit) | Cookie-Banner nötig?, Impressum (§ 5 DDG), Datenschutzerklärung, fehlende Dienste darin, Rechtliches auf jeder Seite verlinkt, veraltete OS-Plattform-Links (seit 20.07.2025), alte Gesetzesnamen (TMG, RStV, TTDSG), Shop: Bestellknopf, AGB/Widerruf | eigener Cookie-Banner (blockiert Tracking bis zur Einwilligung), Impressum und Datenschutzerklärung aus Firmendaten und erkannten Diensten, Link-Leiste im Footer |
-| **Barrierefreiheit** (BFSG, in Sicherheit) | Sprache der Seite, Zoom gesperrt, Formularfelder ohne Beschriftung, Links ohne Text (auch Breakdance „custom“), unsichtbare Einblendanimationen, Barrierefreiheitserklärung für Shops | ein Klick |
+| **Rechtliches** – Impressum & DSGVO | Cookie-Banner nötig?, Impressum (§ 5 DDG), Datenschutzerklärung, fehlende Dienste darin, Rechtliches auf jeder Seite verlinkt, veraltete OS-Plattform-Links (seit 20.07.2025), alte Gesetzesnamen (TMG, RStV, TTDSG), Shop: Bestellknopf, AGB/Widerruf | eigener Cookie-Banner (blockiert Tracking bis zur Einwilligung), Impressum und Datenschutzerklärung aus Firmendaten und erkannten Diensten, Link-Leiste im Footer |
+| **Rechtliches** – Barrierefreiheit (BFSG) | Sprache der Seite, Zoom gesperrt, Formularfelder ohne Beschriftung, Links ohne Text (auch Breakdance „custom“), unsichtbare Einblendanimationen, Barrierefreiheitserklärung für Shops | ein Klick |
 | **Geschwindigkeit** | Seiten-Cache, Komprimierung, Browser-Cache, große Bilder, LCP-Bild (auch bei Page-Buildern, mit WebP), Bildmaße, blockierende Skripte, Emoji, jQuery Migrate, Dashicons, Datenbank, Objekt-Cache | ein Klick |
 | **SEO** | Sichtbarkeit, Permalinks, Sitemap, robots.txt, Titel, Beschreibungen, Open Graph, strukturierte Daten, Firmenprofil (LocalBusiness), Beitragsbilder, Bild-Sitemap (Yoast/Rank Math), Alternativtexte, H1, kaputte Links, Beispielinhalte | Vorschläge zum Bearbeiten, dann ein Klick |
 
@@ -69,7 +69,7 @@ Testseite mit absichtlich eingebauten Mängeln, echtes WordPress (Playground), P
 | | vorher | nach „alles beheben“ |
 |---|---|---|
 | Gesamt | 12 | **89** |
-| Datenschutz | 7 | 100 |
+| Datenschutz (bis 1.1.x eigener Bereich, jetzt Teil von „Rechtliches“) | 7 | 100 |
 | Sicherheit | 10 | 77 (offen: absichtlich eingebaute Lücke ohne Download, HTTPS/Apache/Backups – im Testsystem nicht möglich) |
 | Geschwindigkeit | 18 | 93 |
 | SEO | 16 | 100 |

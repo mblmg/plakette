@@ -19,7 +19,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class Plakette_Legal_Pages {
 
-	const LEGAL = 'Recht';
+	const LEGAL = 'Impressum & Pflichtangaben';
 	const BFSG  = 'Barrierefreiheit (BFSG)';
 
 	/** Company fields for the forms of the legal checks. */
@@ -666,7 +666,7 @@ class Plakette_Legal_Pages {
 
 class Plakette_Check_Legal_Imprint extends Plakette_Check {
 	public $id        = 'legal_imprint';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::LEGAL;
 	public $weight    = 10;
 	public $title     = 'Impressum vorhanden und verlinkt';
@@ -760,7 +760,7 @@ class Plakette_Check_Legal_Imprint extends Plakette_Check {
 
 class Plakette_Check_Legal_Privacy_Policy extends Plakette_Check {
 	public $id        = 'legal_privacy_policy';
-	public $area      = 'privacy';
+	public $area      = 'legal';
 	public $group     = 'DSGVO & Cookies';
 	public $weight    = 10;
 	public $title     = 'Datenschutzerklärung vorhanden und verlinkt';
@@ -852,7 +852,7 @@ class Plakette_Check_Legal_Privacy_Policy extends Plakette_Check {
 
 class Plakette_Check_Legal_Privacy_Coverage extends Plakette_Check {
 	public $id        = 'legal_privacy_coverage';
-	public $area      = 'privacy';
+	public $area      = 'legal';
 	public $group     = 'DSGVO & Cookies';
 	public $weight    = 6;
 	public $title     = 'Alle eingebundenen Dienste stehen in der Datenschutzerklärung';
@@ -933,7 +933,7 @@ class Plakette_Check_Legal_Privacy_Coverage extends Plakette_Check {
 
 class Plakette_Check_Legal_Links extends Plakette_Check {
 	public $id        = 'legal_links';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::LEGAL;
 	public $weight    = 8;
 	public $title     = 'Impressum und Datenschutz auf jeder Seite verlinkt';
@@ -980,7 +980,7 @@ class Plakette_Check_Legal_Links extends Plakette_Check {
 
 class Plakette_Check_Legal_Odr extends Plakette_Check {
 	public $id        = 'legal_odr';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::LEGAL;
 	public $weight    = 3;
 	public $title     = 'Kein Link auf die abgeschaltete EU-Streitschlichtungsplattform';
@@ -1037,7 +1037,7 @@ class Plakette_Check_Legal_Odr extends Plakette_Check {
 
 class Plakette_Check_Legal_Outdated_Law extends Plakette_Check {
 	public $id        = 'legal_outdated_law';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::LEGAL;
 	public $weight    = 3;
 	public $title     = 'Rechtstexte nennen die aktuellen Gesetze';
@@ -1087,7 +1087,7 @@ class Plakette_Check_Legal_Outdated_Law extends Plakette_Check {
 
 class Plakette_Check_Legal_Shop_Button extends Plakette_Check {
 	public $id        = 'legal_shop_button';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::LEGAL;
 	public $weight    = 7;
 	public $title     = 'Bestellknopf „Zahlungspflichtig bestellen“';
@@ -1115,7 +1115,7 @@ class Plakette_Check_Legal_Shop_Button extends Plakette_Check {
 
 class Plakette_Check_Legal_Shop_Pages extends Plakette_Check {
 	public $id        = 'legal_shop_pages';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::LEGAL;
 	public $weight    = 8;
 	public $title     = 'AGB, Widerrufsbelehrung und Versandinfos vorhanden';
@@ -1161,7 +1161,7 @@ class Plakette_Check_Legal_Shop_Pages extends Plakette_Check {
 
 class Plakette_Check_Legal_Bfsg_Statement extends Plakette_Check {
 	public $id        = 'legal_bfsg_statement';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::BFSG;
 	public $weight    = 5;
 	public $title     = 'Erklärung zur Barrierefreiheit vorhanden';
@@ -1227,7 +1227,7 @@ class Plakette_Check_Legal_Bfsg_Statement extends Plakette_Check {
 
 class Plakette_Check_A11y_Lang extends Plakette_Check {
 	public $id        = 'a11y_lang';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::BFSG;
 	public $weight    = 5;
 	public $title     = 'Die Sprache der Seiten ist angegeben';
@@ -1303,7 +1303,7 @@ class Plakette_Check_A11y_Lang extends Plakette_Check {
 
 class Plakette_Check_A11y_Zoom extends Plakette_Check {
 	public $id        = 'a11y_zoom';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::BFSG;
 	public $weight    = 6;
 	public $title     = 'Besucher können die Seite vergrößern';
@@ -1338,7 +1338,7 @@ class Plakette_Check_A11y_Zoom extends Plakette_Check {
 
 class Plakette_Check_A11y_Form_Labels extends Plakette_Check {
 	public $id        = 'a11y_form_labels';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = Plakette_Legal_Pages::BFSG;
 	public $weight    = 4;
 	public $title     = 'Alle Formularfelder sind beschriftet';

@@ -155,6 +155,55 @@ class Plakette_Legal {
 		return $out;
 	}
 
+	/**
+	 * Pages nobody searches for and that need no SEO polish (meta description, featured image): the legal pages
+	 * (Impressum, Datenschutz, Barrierefreiheit, AGB, Widerruf) and the functional shop pages (cart, checkout, account).
+	 * They may stay in the index – Google needs neither a description nor a noindex for them.
+	 *
+	 * @return array post id => true
+	 */
+	public static function utility_pages() {
+		static $ids = null;
+		if ( null !== $ids ) {
+			return $ids;
+		}
+		$ids = array();
+		foreach ( self::legal_pages() as $page ) {
+			$ids[ (int) $page['id'] ] = true;
+		}
+		$found = array(
+			self::find_page( array( 'agb', 'allgemeine-geschaeftsbedingungen', 'terms', 'terms-and-conditions' ), '/^(AGB|Allgemeine Geschäftsbedingungen|terms( and conditions| of service)?)$/iu' ),
+			self::find_page( array( 'widerruf', 'widerrufsbelehrung', 'widerrufsrecht' ), '/^widerruf/iu' ),
+			self::find_page( array( 'versand', 'versandkosten', 'zahlung-und-versand', 'versand-und-zahlung' ), '/^(Versand|Zahlung)( |$)/iu' ),
+			self::find_page( array( 'cookie-richtlinie', 'cookie-richtlinie-eu', 'cookies', 'cookie-policy' ), '/^cookie/iu' ),
+		);
+		foreach ( array( 'wp_page_for_privacy_policy', 'woocommerce_terms_page_id', 'woocommerce_cart_page_id', 'woocommerce_checkout_page_id', 'woocommerce_myaccount_page_id' ) as $option ) {
+			$found[] = (int) get_option( $option );
+		}
+		foreach ( array_filter( array_map( 'intval', $found ) ) as $id ) {
+			$ids[ $id ] = true;
+		}
+		$ids = (array) apply_filters( 'plakette_utility_pages', $ids );
+		return $ids;
+	}
+
+	/** Is the post kept out of search engines on purpose (Plakette or the SEO plugin)? Then it needs no SEO texts. */
+	public static function is_noindex( $post_id ) {
+		$post_id = (int) $post_id;
+		if ( get_post_meta( $post_id, '_plakette_noindex', true ) || '1' === (string) get_post_meta( $post_id, '_yoast_wpseo_meta-robots-noindex', true ) ) {
+			return true;
+		}
+		if ( in_array( 'noindex', (array) get_post_meta( $post_id, 'rank_math_robots', true ), true ) ) {
+			return true;
+		}
+		return 'yes' === get_post_meta( $post_id, '_seopress_robots_index', true ) || get_post_meta( $post_id, '_genesis_noindex', true );
+	}
+
+	/** Shortcut for the content checks: does this page need a description / featured image for Google? */
+	public static function needs_seo_texts( $post_id ) {
+		return ! isset( self::utility_pages()[ (int) $post_id ] ) && ! self::is_noindex( $post_id );
+	}
+
 	/** B2C shop or booking system that is active ('' = none). */
 	public static function shop_system() {
 		$known = array(

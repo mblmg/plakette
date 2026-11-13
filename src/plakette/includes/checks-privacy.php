@@ -8,7 +8,7 @@
 defined( 'ABSPATH' ) || exit;
 
 abstract class Plakette_Privacy_Check extends Plakette_Check {
-	public $area  = 'privacy';
+	public $area  = 'legal';
 	public $group = 'Fremde Server';
 
 	/** Merged Plakette_Services::detect() of the home page and the sample pages (+ where it was found). */

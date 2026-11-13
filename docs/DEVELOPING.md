@@ -18,7 +18,7 @@ Mindestens **PHP 8.2** (bis 8.5) – nur Versionen mit Sicherheitsupdates: `str_
 ```php
 class Plakette_Check_Xyz extends Plakette_Check {
 	public $id        = 'security_xyz';      // eindeutig, Präfix = Bereich
-	public $area      = 'security';          // privacy | security | speed | seo
+	public $area      = 'security';          // legal | security | speed | seo (Plakette_Auditor::areas())
 	public $group     = 'Schutz vor Angriffen';
 	public $weight    = 6;                   // 1–10; fail mit weight ≥ 6 = „erheblicher Mangel“
 	public $title     = 'Zielzustand (wenn alles gut ist)';
@@ -62,6 +62,29 @@ scripts, styles, iframes, links (href,text,label), viewport, generator, hosts (f
 - `Plakette_Page_Cache::purge_all()` leert den eigenen Cache und die gängiger Cache-Plugins (nach jedem Fix automatisch).
 - Hooks: `plakette_boot` (Module einhängen), `plakette_daily` (täglicher Cron), `plakette_activate`, `plakette_deactivate`.
 
+## Bereiche
+`legal` „Rechtliches“ (Gruppen: Impressum & Pflichtangaben, DSGVO & Cookies, Fremde Server, Kommentare, Barrierefreiheit (BFSG)),
+`security` „Sicherheit“, `speed` „Geschwindigkeit“, `seo` „SEO“. Die IDs der Prüfungen behalten ihr altes Präfix
+(`privacy_…`, `legal_…`, `a11y_…`) – sie stehen im Protokoll und in gespeicherten Berichten. Berichte von vor 1.2.0
+sortiert `Plakette_Auditor::migrate()` einmalig um.
+
+## Feste Funktionen (dürfen bei Umbauten nicht verloren gehen)
+Vom Auftraggeber ausdrücklich verlangt. `tests/run.php?step=features` (läuft in `tests/e2e.sh`, Zeile „Feste Funktionen
+fehlen“) prüft, dass es sie gibt und dass sie wirken – der Test muss „keine“ melden.
+- **Vorladen (Preload)** – `includes/modules/preload.php`, Einstellungen › „Bilder und lokale Kopien“:
+  `preload_fonts` (+ `preload_fonts_max`), `preload_cdn`, `preload_extra`. Nur Dateien der eigenen Domain.
+- **Besucherstatistik einschalten** – Einstellungen › „Besucherstatistik“ (`stats.enabled`), zusätzlich zum Modul `stats`.
+
+## Regeln für Prüfungen
+- **Beleg statt Behauptung:** Ein Befund nennt, was genau gefunden wurde (abgerufene Adresse, Antwort, Datei) – in
+  `notes`. Vorbild: `Plakette_Check_Https::probe_http()`.
+- **Nur was Besucher betrifft:** Dateien, die nur in der Mediathek liegen, sind kein Mangel
+  (`Plakette_Image_Usage::is_used()`); rechtliche Seiten und noindex-Seiten brauchen keine SEO-Texte
+  (`Plakette_Legal::needs_seo_texts()`).
+- Server-Regeln, die vor WordPress und vor jedem Seiten-Cache greifen müssen (Weiterleitungen), gehören an den Anfang
+  der `.htaccess`: `Plakette_Env::write_htaccess_block( $marker, $zeilen, true )` – danach immer selbst testen und
+  bei Fehler sofort zurücknehmen.
+
 ## Testen
 - `tools/lint.sh` – PHP-Syntax aller Dateien (PHP-WASM).
 - `tests/e2e.sh 8.4` bzw. `8.2` – echtes WordPress (Playground): Testseite mit Mängeln anlegen, prüfen, alles beheben,
@@ -73,7 +96,7 @@ scripts, styles, iframes, links (href,text,label), viewport, generator, hosts (f
 | `checks-privacy.php`, `modules/consent.php`, `modules/privacy.php`, `modules/statistics.php`, `assets/consent.*`, `assets/stats.js` | privacy_consent (bannerfrei?), privacy_third_party, privacy_embeds, privacy_gravatar, privacy_comment_ip, privacy_comment_consent | consent, embeds, local_avatars, comment_ip, comment_note, remove_services (Liste von Dienst-IDs), stats (Plakette-Statistik, Tabelle `plakette_stats`) |
 | `checks-security.php`, `modules/security.php` | security_* | sec_headers, no_xmlrpc, no_user_enum, login_limit, hide_errors, no_generator, mixed_content |
 | `checks-legal.php`, `modules/legal.php` | legal_*, a11y_lang, a11y_zoom, a11y_form_labels | legal_links, shop_button, a11y_lang, a11y_zoom, a11y_form_labels |
-| `checks-toolkit.php`, `modules/performance.php`, `modules/fonts.php` | speed_image_dims, privacy_cdn, a11y_animations, a11y_link_names (+ speed_lcp, privacy_google_fonts) | local_fonts, lcp, lcp_auto, lcp_webp, cdn_local, img_dims, a11y_anim, link_names |
+| `checks-toolkit.php`, `modules/performance.php`, `modules/fonts.php`, `modules/preload.php` | speed_image_dims, privacy_cdn, a11y_animations, a11y_link_names (+ speed_lcp, privacy_google_fonts) | local_fonts, lcp, lcp_auto, lcp_webp, cdn_local, img_dims, a11y_anim, link_names |
 | `class-vulns.php`, `checks-vulns.php`, `modules/vulns-boot.php`, `class-dashboard.php` | security_vulnerabilities (Abgleich mit WPVulnerability/CVE), Dashboard-Widget, Admin-Hinweis | – (Einstellungen „vulns“, „dashboard“) |
 | `checks-seo-helper.php`, `modules/seo-helper.php`, `modules/breakdance.php` | seo_company_schema, seo_image_sitemap, seo_featured_images, legacy_imm_plugins | company_schema, image_sitemap (+ Einstellungen „breakdance“) |
 

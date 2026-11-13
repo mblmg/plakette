@@ -483,6 +483,37 @@ class Plakette_Modern_Images {
 
 	/* ================================================================== settings (info) */
 
+	/**
+	 * Who delivers modern formats on this website? Plakette itself, another optimiser (EWWW, CompressX …) or nobody.
+	 * Says what visitors really get – not only whether Plakette's own conversion is switched on.
+	 */
+	public static function status_html() {
+		$foreign = Plakette_Image_Delivery::foreign();           // name => images, measured by the last audit.
+		$plugins = Plakette_Image_Delivery::active_optimizers(); // name => mode, by active plugin.
+		$p       = function ( $text, $em = false ) {
+			return '<p>' . ( $em ? '<em>' : '' ) . esc_html( $text ) . ( $em ? '</em>' : '' ) . '</p>';
+		};
+		if ( self::active() ) {
+			$out = $p( __( 'Eingeschaltet: Plakette wandelt deine Bilder um und liefert jedem Browser das kleinste Format.', 'plakette' ) );
+			if ( $plugins ) {
+				$out .= $p( sprintf( __( 'Zusätzlich aktiv: %s. Zwei Plugins für dieselbe Aufgabe sind unnötig – eines davon kannst du abschalten.', 'plakette' ), implode( ', ', array_keys( $plugins ) ) ) );
+			}
+			return $out;
+		}
+		if ( $foreign ) {
+			$parts = array();
+			foreach ( $foreign as $name => $n ) {
+				$parts[] = sprintf( _n( '%1$s (%2$d Bild bei der letzten Prüfung)', '%1$s (%2$d Bilder bei der letzten Prüfung)', (int) $n, 'plakette' ), $name, (int) $n );
+			}
+			return $p( sprintf( __( 'Aktiv über ein anderes Plugin: %s liefert deinen Besuchern moderne Bildformate aus.', 'plakette' ), implode( ', ', $parts ) ) )
+				. $p( __( 'Plakettes eigene Umwandlung ist deshalb aus – zwei Umwandler parallel würden sich nur in die Quere kommen. Möchtest du das Plugin ersetzen: deaktiviere es, starte die Prüfung neu und wähle beim Prüfpunkt „Moderne Bildformate“ den Knopf „Bilder umwandeln“.', 'plakette' ) );
+		}
+		if ( $plugins ) {
+			return $p( sprintf( __( 'Plakettes eigene Umwandlung ist aus. %s ist aktiv, bei der letzten Prüfung kam aber kein Bild in einem modernen Format bei Besuchern an (oder es wurde noch nicht geprüft). Starte die Prüfung – der Prüfpunkt „Moderne Bildformate“ zeigt, was wirklich ausgeliefert wird.', 'plakette' ), implode( ', ', array_keys( $plugins ) ) ) );
+		}
+		return $p( __( 'Ausgeschaltet. Einschalten: Prüfung starten und beim Prüfpunkt „Moderne Bildformate“ auf „Bilder umwandeln“ klicken.', 'plakette' ), true );
+	}
+
 	public static function info_html() {
 		$f   = self::formats();
 		$s   = self::stats();
@@ -490,7 +521,7 @@ class Plakette_Modern_Images {
 		$no  = esc_html__( 'nein', 'plakette' );
 		$out = '<ul>'
 			. '<li>' . esc_html( sprintf( __( 'Bildbibliothek des Servers: %s', 'plakette' ), self::library() ) ) . '</li>'
-			. '<li>AVIF: ' . ( $f['avif'] ? $yes : $no ) . ' · WebP: ' . ( $f['webp'] ? $yes : $no ) . '</li>';
+			. '<li>' . esc_html__( 'Das könnte Plakette auf diesem Server selbst erzeugen:', 'plakette' ) . ' AVIF: ' . ( $f['avif'] ? $yes : $no ) . ' · WebP: ' . ( $f['webp'] ? $yes : $no ) . '</li>';
 		if ( $s['images'] ) {
 			$out .= '<li>' . esc_html(
 				sprintf(
@@ -506,7 +537,7 @@ class Plakette_Modern_Images {
 				$out .= '<li>' . esc_html( sprintf( __( 'Bei %d Bildgrößen hat der AVIF-Encoder des Servers nichts erzeugt (meist große Bilder) – dort gibt es WebP.', 'plakette' ), $s['avif_failed'] ) ) . '</li>';
 			}
 		} else {
-			$out .= '<li>' . esc_html__( 'Noch keine Bilder umgewandelt.', 'plakette' ) . '</li>';
+			$out .= '<li>' . esc_html__( 'Plakette selbst hat noch keine Bilder umgewandelt.', 'plakette' ) . '</li>';
 		}
 		return $out . '</ul>';
 	}
@@ -1035,3 +1066,143 @@ class Plakette_Image_Delivery {
 		return array( 'avif' => 'AVIF', 'webp' => 'WebP', 'jpeg' => 'JPEG', 'png' => 'PNG', 'gif' => 'GIF', 'svg' => 'SVG' )[ $format ] ?? '?';
 	}
 }
+
+/**
+ * Which library images are used anywhere on the website?
+ *
+ * The check for big images must not blame files that only lie in the media library: nobody downloads them.
+ * One pass over the content of the site collects every image file name it mentions – post content (all post types
+ * except revisions), post meta (page builders such as Breakdance, Elementor, Bricks and ACF keep their data there),
+ * term meta and the options of theme, widgets and builders – plus the attachments used by id (featured images,
+ * product galleries, logo, site icon, core image blocks, ACF image fields).
+ * File names are compared without folder, size suffix (-300x200, -scaled) and extension, so every size variant and
+ * every modern copy (bild.jpg.webp) counts for its original. A name that appears in any content counts as "used":
+ * in doubt an image stays in the list (no false all-clear).
+ * The result is cached for ten minutes (transient) and dropped when content changes.
+ */
+class Plakette_Image_Usage {
+
+	const CACHE = 'plakette_image_usage';
+	const EXT   = 'jpe?g|png|webp|avif|gif';
+
+	public static function boot() {
+		foreach ( array( 'save_post', 'deleted_post', 'switch_theme', 'customize_save_after' ) as $hook ) {
+			add_action( $hook, array( __CLASS__, 'flush' ), 10, 0 );
+		}
+	}
+
+	public static function flush() {
+		static $done = false;
+		if ( ! $done ) {
+			$done = true;
+			delete_transient( self::CACHE );
+		}
+	}
+
+	/** Comparable name of an image file: no folder, no size suffix, no extension(s), lower case. */
+	public static function key( $file ) {
+		$name = strtolower( rawurldecode( wp_basename( str_replace( '\\', '/', (string) $file ) ) ) );
+		$name = preg_replace( '#(\.(' . self::EXT . '))+$#', '', $name );
+		return preg_replace( '#(-\d+x\d+|-scaled|-rotated|-e\d{10,})+$#', '', $name );
+	}
+
+	/** Adds every image file name found in $text to $names. */
+	private static function collect( $text, array &$names ) {
+		if ( ! is_string( $text ) || '' === $text || ! preg_match( '#\.(?:' . self::EXT . ')#i', $text ) ) {
+			return;
+		}
+		if ( preg_match_all( '#([^\s"\'\\\\/<>()?\#,=;:&|]+)\.(?:' . self::EXT . ')(?![a-z0-9])#i', $text, $m ) ) {
+			foreach ( $m[1] as $name ) {
+				$names[ self::key( $name . '.jpg' ) ] = true;
+			}
+		}
+	}
+
+	/** @return array [ names => key => true, ids => attachment id => true ] */
+	public static function index() {
+		global $wpdb;
+		$cached = get_transient( self::CACHE );
+		if ( is_array( $cached ) && isset( $cached['names'], $cached['ids'] ) ) {
+			return $cached;
+		}
+		$names = array();
+		$ids   = array();
+
+		// Post content of everything that is not an attachment or a revision (pages, posts, templates, blocks, products …).
+		$last = 0;
+		do {
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_content, post_excerpt FROM {$wpdb->posts} WHERE ID > %d AND post_type NOT IN ('attachment','revision') AND post_status NOT IN ('trash','auto-draft','inherit') ORDER BY ID ASC LIMIT 200", $last ) ); // phpcs:ignore WordPress.DB
+			foreach ( (array) $rows as $row ) {
+				$last = (int) $row->ID;
+				self::collect( $row->post_content . ' ' . $row->post_excerpt, $names );
+				if ( preg_match_all( '#wp-image-(\d+)|"(?:id|mediaId|mediaID)":(\d+)|\bids=["\']([\d,\s]+)#', $row->post_content, $m ) ) {
+					foreach ( array_merge( $m[1], $m[2], explode( ',', implode( ',', $m[3] ) ) ) as $id ) {
+						if ( (int) $id ) {
+							$ids[ (int) $id ] = true;
+						}
+					}
+				}
+			}
+		} while ( count( (array) $rows ) === 200 );
+
+		// Post meta: builder data and custom fields. The attachment's own bookkeeping (and backups of it) does not count.
+		$last = 0;
+		do {
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT pm.meta_id, pm.meta_key, pm.meta_value FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_id > %d AND p.post_type NOT IN ('attachment','revision') AND p.post_status NOT IN ('trash','auto-draft') AND ( pm.meta_key IN ('_thumbnail_id','_product_image_gallery') OR pm.meta_value REGEXP %s ) ORDER BY pm.meta_id ASC LIMIT 200", $last, '\\.(jpe?g|png|webp|avif|gif)' ) ); // phpcs:ignore WordPress.DB
+			foreach ( (array) $rows as $row ) {
+				$last = (int) $row->meta_id;
+				if ( '_thumbnail_id' === $row->meta_key || '_product_image_gallery' === $row->meta_key ) {
+					foreach ( explode( ',', (string) $row->meta_value ) as $id ) {
+						if ( (int) $id ) {
+							$ids[ (int) $id ] = true;
+						}
+					}
+					continue;
+				}
+				self::collect( $row->meta_value, $names );
+			}
+		} while ( count( (array) $rows ) === 200 );
+
+		// ACF image/gallery fields keep attachment ids: a meta value "123" whose companion "_key" points to an ACF field.
+		$acf = $wpdb->get_col( "SELECT v.meta_value FROM {$wpdb->postmeta} k JOIN {$wpdb->postmeta} v ON v.post_id = k.post_id AND v.meta_key = SUBSTRING(k.meta_key, 2) WHERE k.meta_key LIKE '\\_%' AND k.meta_value LIKE 'field\\_%' AND ( v.meta_value REGEXP '^[0-9]+$' OR v.meta_value LIKE 'a:%' ) LIMIT 5000" ); // phpcs:ignore WordPress.DB
+		foreach ( (array) $acf as $value ) {
+			$list = is_numeric( $value ) ? array( $value ) : (array) maybe_unserialize( $value );
+			foreach ( $list as $id ) {
+				if ( is_scalar( $id ) && ctype_digit( (string) $id ) && (int) $id ) {
+					$ids[ (int) $id ] = true;
+				}
+			}
+		}
+
+		// Term meta (category images) and options (theme settings, widgets, builder settings) – not Plakette's own data.
+		foreach ( (array) $wpdb->get_col( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->termmeta} WHERE meta_value REGEXP %s LIMIT 2000", '\\.(jpe?g|png|webp|avif|gif)' ) ) as $value ) { // phpcs:ignore WordPress.DB
+			self::collect( $value, $names );
+		}
+		foreach ( (array) $wpdb->get_col( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name NOT LIKE %s AND option_name NOT LIKE %s AND option_name NOT LIKE %s AND option_value REGEXP %s LIMIT 2000", 'plakette\\_%', '\\_transient\\_%', '\\_site\\_transient\\_%', '\\.(jpe?g|png|webp|avif|gif)' ) ) as $value ) { // phpcs:ignore WordPress.DB
+			self::collect( $value, $names );
+		}
+		foreach ( array( (int) get_option( 'site_icon' ), (int) get_theme_mod( 'custom_logo' ), (int) get_theme_mod( 'header_image_data' ), (int) get_theme_mod( 'background_image_thumb' ) ) as $id ) {
+			if ( $id ) {
+				$ids[ $id ] = true;
+			}
+		}
+		$index = array(
+			'names' => $names,
+			'ids'   => $ids,
+		);
+		set_transient( self::CACHE, $index, 10 * MINUTE_IN_SECONDS );
+		return $index;
+	}
+
+	/** Is this library image used anywhere on the website? */
+	public static function is_used( $attachment_id, $file = '' ) {
+		$index = self::index();
+		if ( isset( $index['ids'][ (int) $attachment_id ] ) ) {
+			return true;
+		}
+		$file = '' !== $file ? $file : (string) get_attached_file( $attachment_id );
+		return '' !== $file && isset( $index['names'][ self::key( $file ) ] );
+	}
+}
+
+add_action( 'plakette_boot', array( 'Plakette_Image_Usage', 'boot' ) );

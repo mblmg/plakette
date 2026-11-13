@@ -98,7 +98,7 @@
 		return c.status === 'warn' ? 'note' : c.status;
 	};
 	const kindOf = ( c ) => c.kind || 'auto';
-	const AREA_FALLBACK = { privacy: 'Datenschutz', security: 'Sicherheit', speed: 'Geschwindigkeit', seo: 'SEO' };
+	const AREA_FALLBACK = { legal: 'Rechtliches', security: 'Sicherheit', speed: 'Geschwindigkeit', seo: 'SEO' };
 	const areas = () => S.areas || AREA_FALLBACK;
 	const areaLabel = ( key ) => areas()[ key ] || key;
 	const fixable = ( c ) => ( c.status === 'fail' || c.status === 'warn' ) && ! c.blocked && kindOf( c ) !== 'none';

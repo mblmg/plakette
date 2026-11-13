@@ -28,6 +28,7 @@ step fixall 2-fix
 step audit 3-after
 step undoall 4-undo
 step state 5-state
+step features 7-features
 step audit 6-after-undo
 curl -s http://127.0.0.1:$PORT/wp-content/debug.log > "$OUT/debug.log"
 python3 - "$OUT" <<'PY'
@@ -38,6 +39,7 @@ a, f, b, u, c = load("1-before"), load("2-fix"), load("3-after"), load("4-undo")
 st = lambda d: {r.split()[1]: r.split()[0] for r in d["rows"]}
 areas = lambda d: " | ".join(f"{k} {v}" for k, v in d["scores"].items() if k not in ("total", "count"))
 print("Prüfpunkte:", len(a["rows"]))
+print("Feste Funktionen fehlen:", load("7-features").get("missing", "TEST LIEF NICHT") or "keine")
 print("Score vorher :", a["scores"]["total"], "|", areas(a), "| Server", a["home"]["time_ms"], "ms")
 print("Score nachher:", b["scores"]["total"], "|", areas(b), "| Server", b["home"]["time_ms"], "ms")
 errs = {k: v for k, v in f.get("fixes", {}).items() if v.startswith(("ERROR", "LOG"))}

@@ -13,7 +13,7 @@ abstract class Plakette_Check {
 
 	/** @var string Unique id. */
 	public $id = '';
-	/** @var string seo|speed */
+	/** @var string legal|security|speed|seo – see Plakette_Auditor::areas() */
 	public $area = 'seo';
 	/** @var string Group shown in the report. */
 	public $group = '';

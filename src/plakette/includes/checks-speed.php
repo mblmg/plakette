@@ -202,7 +202,7 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 	public $weight    = 7;
 	public $title     = 'Bilder sind nicht unnötig groß';
 	public $problem   = 'Sehr große Bilddateien';
-	public $explain   = 'Fotos direkt von Kamera oder Handy sind oft mehrere Megabyte groß und viel breiter als jeder Bildschirm. Das ist meist der größte einzelne Grund für langsame Seiten.';
+	public $explain   = 'Fotos direkt von Kamera oder Handy sind oft mehrere Megabyte groß und viel breiter als jeder Bildschirm. Das ist meist der größte einzelne Grund für langsame Seiten. Plakette zählt nur Bilder, die auf deiner Website wirklich verwendet werden – was nur in der Mediathek liegt, lädt kein Besucher.';
 	public $fix_label = 'Ausgewählte Bilder verkleinern';
 	public $fix_does  = 'Verkleinert die Bilder auf höchstens 2048 Pixel Breite und speichert sie platzsparend (Qualität 82 %). Der Unterschied ist mit bloßem Auge kaum zu sehen. Die Originale werden gesichert und lassen sich zurückholen.';
 	public $kind      = 'items';
@@ -235,9 +235,11 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 			}
 		}
 		$ids   = $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp') ORDER BY ID DESC LIMIT 2000" );
-		$items = array();
-		$total = 0;
-		$notes = array();
+		$items        = array();
+		$total        = 0;
+		$notes        = array();
+		$unused       = 0;
+		$unused_bytes = 0;
 		foreach ( $ids as $id ) {
 			$id   = (int) $id;
 			$file = get_attached_file( $id );
@@ -254,6 +256,12 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 			// A big original only costs visitors when they get it: judge what is delivered, not the library.
 			if ( isset( $delivered[ $id ] ) && $delivered[ $id ] <= self::MAX_DELIVERED ) {
 				++$covered;
+				continue;
+			}
+			// Only in the media library, on no page: nobody downloads it – no defect.
+			if ( ! isset( $delivered[ $id ] ) && ! Plakette_Image_Usage::is_used( $id, $file ) ) {
+				++$unused;
+				$unused_bytes += $bytes;
 				continue;
 			}
 			$copy = Plakette_Image_Delivery::modern_copy_bytes( $file );
@@ -283,16 +291,28 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 				$who ? ' (' . sprintf( __( '%s liefert moderne Formate aus', 'plakette' ), implode( ', ', array_keys( $who ) ) ) . ')' : ''
 			);
 		}
+		$info = 0;
+		if ( $covered ) {
+			++$info;
+		}
+		if ( $unused ) {
+			++$info;
+			$notes[] = sprintf(
+				_n( '%1$d großes Bild (%2$s) liegt nur in der Mediathek und wird auf keiner Seite verwendet – es bremst niemanden und zählt nicht als Mangel.', '%1$d große Bilder (zusammen %2$s) liegen nur in der Mediathek und werden auf keiner Seite verwendet – sie bremsen niemanden und zählen nicht als Mangel.', $unused, 'plakette' ),
+				$unused,
+				self::size( $unused_bytes )
+			);
+		}
 		if ( ! $items ) {
 			$detail = __( 'Besucher laden keine unnötig großen Bilder.', 'plakette' );
-			return $notes && count( $notes ) > ( $covered ? 1 : 0 )
+			return $notes && count( $notes ) > $info
 				? $this->warn( $detail, array( 'notes' => $notes, 'kind' => 'none' ) )
 				: $this->pass( $detail, $notes ? array( 'notes' => $notes ) : array() );
 		}
 		if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/jpeg' ) ) ) {
 			return $this->fail( __( 'Große Bilder gefunden.', 'plakette' ), array( 'items' => $items, 'notes' => $notes, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie die PHP-Erweiterung GD oder Imagick, damit WordPress Bilder bearbeiten kann.', 'plakette' ) ) ) );
 		}
-		return $this->fail( sprintf( __( '%1$d Bilder sind zusammen %2$s groß.', 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items, 'notes' => $notes ) );
+		return $this->fail( sprintf( _n( '%1$d Bild, das auf deiner Website verwendet wird, ist %2$s groß.', '%1$d Bilder, die auf deiner Website verwendet werden, sind zusammen %2$s groß.', count( $items ), 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items, 'notes' => $notes ) );
 	}
 
 	public function fix( array $req, array &$undo ) {
@@ -719,7 +739,7 @@ class Plakette_Check_Dashicons extends Plakette_Check_Bloat {
 
 class Plakette_Check_Google_Fonts extends Plakette_Speed_Check {
 	public $id        = 'privacy_google_fonts';
-	public $area      = 'privacy';
+	public $area      = 'legal';
 	public $group     = 'Fremde Server';
 	public $weight    = 5;
 	public $title     = 'Schriften kommen vom eigenen Server';

@@ -83,14 +83,29 @@ class Plakette_Check_Https extends Plakette_Check {
 	public function run( Plakette_Context $ctx ) {
 		$home = home_url( '/' );
 		if ( 0 === strpos( $home, 'https://' ) ) {
-			$http = wp_remote_get( set_url_scheme( $home, 'http' ), array( 'redirection' => 0, 'timeout' => 10, 'sslverify' => false ) );
-			if ( ! is_wp_error( $http ) && 200 === wp_remote_retrieve_response_code( $http ) ) {
-				return $this->fail(
-					__( 'HTTPS ist eingerichtet, aber die unsichere http-Adresse zeigt die Seite noch ohne Weiterleitung an.', 'plakette' ),
-					array( 'fix_label' => __( 'Weiterleitung auf HTTPS einschalten', 'plakette' ) )
-				);
+			$probe = self::probe_http( $home );
+			if ( ! $probe['open'] ) {
+				return $this->pass( __( 'Die Website nutzt HTTPS, die http-Adresse leitet weiter.', 'plakette' ) );
 			}
-			return $this->pass( __( 'Die Website nutzt HTTPS.', 'plakette' ) );
+			$extra  = array(
+				'notes'     => $probe['notes'],
+				'fix_label' => __( 'Weiterleitung auf HTTPS einschalten', 'plakette' ),
+				'fix_does'  => __( 'Trägt die Weiterleitung von http auf https ganz oben in die Datei .htaccess ein. Dort greift sie, bevor WordPress oder ein Seiten-Cache antwortet. Plakette testet danach, ob die Website erreichbar bleibt, und nimmt die Änderung sonst sofort zurück.', 'plakette' ),
+			);
+			$detail = $probe['cache']
+				? __( 'HTTPS ist eingerichtet, aber über die unsichere http-Adresse liefert ein Seiten-Cache die Seite ohne Weiterleitung aus.', 'plakette' )
+				: __( 'HTTPS ist eingerichtet, aber die unsichere http-Adresse zeigt die Seite noch ohne Weiterleitung an.', 'plakette' );
+			if ( ! Plakette_Env::htaccess_writable() && ( $probe['cache'] || Plakette_Modules::on( 'force_https' ) ) ) {
+				// The redirect inside WordPress is not enough here and Plakette cannot write server rules.
+				$extra['kind']   = 'letter';
+				$extra['letter'] = $this->letter( sprintf( __( 'Bitte richten Sie für die Domain %s eine serverseitige, dauerhafte Weiterleitung (301) aller http-Aufrufe auf https ein. Aktuell wird die Seite über http ohne Weiterleitung ausgeliefert (aus dem Seiten-Cache).', 'plakette' ), wp_parse_url( $home, PHP_URL_HOST ) ) );
+			}
+			if ( $probe['hsts'] ) {
+				// Returning browsers never use http again – a gap for first visits through old links, not missing encryption.
+				$extra['weight'] = 4;
+				return $this->warn( $detail . ' ' . __( 'Browser, die schon einmal da waren, erzwingen bei dir HTTPS (HSTS) – betroffen sind nur erste Aufrufe über alte http-Links.', 'plakette' ), $extra );
+			}
+			return $this->fail( $detail, $extra );
 		}
 		$https = wp_remote_get( set_url_scheme( $home, 'https' ), array( 'timeout' => 10, 'sslverify' => true ) );
 		if ( is_wp_error( $https ) || wp_remote_retrieve_response_code( $https ) >= 400 ) {
@@ -103,6 +118,106 @@ class Plakette_Check_Https extends Plakette_Check {
 			);
 		}
 		return $this->fail( __( 'Dein Zertifikat funktioniert bereits, WordPress nutzt aber noch die http-Adresse.', 'plakette' ) );
+	}
+
+	const MARKER = 'Plakette HTTPS';
+
+	/**
+	 * Does the http address show the site instead of redirecting to https? Asked from the server itself, like a
+	 * first-time visitor (no cookies), with proof for the report. A second request with an unknown parameter goes
+	 * past page caches: when that one redirects, a cache answers the first one before WordPress can redirect
+	 * (seen with WP-Optimize: it stores one copy per address and serves it for http and https alike).
+	 *
+	 * @return array [ open (bool), cache (bool), hsts (bool), url, notes (string[]) ]
+	 */
+	public static function probe_http( $home ) {
+		$url  = set_url_scheme( $home, 'http' );
+		$out  = array( 'open' => false, 'cache' => false, 'hsts' => false, 'url' => $url, 'notes' => array() );
+		$ask  = function ( $try ) {
+			$res = wp_remote_get( $try, array( 'redirection' => 0, 'timeout' => 10, 'sslverify' => false, 'user-agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Plakette' ) );
+			if ( is_wp_error( $res ) ) {
+				return null; // Port 80 closed or not reachable from the server itself: nothing is shown over http.
+			}
+			$code = (int) wp_remote_retrieve_response_code( $res );
+			$body = (string) wp_remote_retrieve_body( $res );
+			$loc  = (string) wp_remote_retrieve_header( $res, 'location' );
+			$via  = array();
+			foreach ( array( 'server', 'wpo-cache-status', 'x-cache', 'x-plakette-cache', 'x-litespeed-cache', 'cf-cache-status', 'x-cache-enabled', 'x-cache-status', 'x-rocket-cache', 'x-varnish', 'via', 'age' ) as $h ) {
+				$v = wp_remote_retrieve_header( $res, $h );
+				if ( is_string( $v ) && '' !== $v ) {
+					$via[ $h ] = $h . ': ' . $v;
+				}
+			}
+			return array(
+				'code'   => $code,
+				'https'  => $code >= 300 && $code < 400 && 0 === stripos( $loc, 'https://' ),
+				// A page that sends the browser on by itself (meta refresh of some hosters) counts as a redirect.
+				'page'   => 200 === $code && ! preg_match( '#<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+url=\s*https://#i', $body ),
+				'loc'    => $loc,
+				'bytes'  => strlen( $body ),
+				'title'  => preg_match( '#<title[^>]*>(.*?)</title>#is', $body, $m ) ? trim( wp_strip_all_tags( $m[1] ) ) : '',
+				'via'    => $via,
+				'cached' => (bool) array_diff_key( $via, array( 'server' => 1, 'via' => 1 ) ),
+			);
+		};
+		$first = $ask( $url );
+		// http://www… → http://… → https://… is fine: follow redirects that stay on http (max. 3 hops).
+		for ( $hop = 0; $hop < 3 && $first && ! $first['https'] && $first['code'] >= 300 && $first['code'] < 400 && 0 === stripos( $first['loc'], 'http://' ); $hop++ ) {
+			$url   = $first['loc'];
+			$first = $ask( $url );
+		}
+		$out['url'] = $url;
+		if ( ! $first || ( ! $first['page'] && ( $first['https'] || $first['code'] >= 400 || 200 === $first['code'] ) ) ) {
+			return $out; // Redirects to https, or the site is not shown over http at all.
+		}
+		$out['open'] = true;
+		if ( $first['page'] ) {
+			$out['notes'][] = sprintf(
+				/* translators: 1: url, 2: size, 3: page title, 4: response headers */
+				__( 'Abruf von %1$s (wie ein Erstbesucher, ohne Weiterleitungen zu folgen) → Antwort 200 mit dem Inhalt der Seite (%2$s, Titel „%3$s“) statt einer Weiterleitung auf https. Antwort-Kopfzeilen: %4$s.', 'plakette' ),
+				$url,
+				size_format( $first['bytes'] ),
+				'' !== $first['title'] ? $first['title'] : '–',
+				$first['via'] ? implode( '; ', $first['via'] ) : '–'
+			);
+		} else {
+			$out['notes'][] = sprintf( __( 'Abruf von %1$s → Antwort %2$d, Weiterleitung nach %3$s (nicht https).', 'plakette' ), $url, $first['code'], '' !== $first['loc'] ? $first['loc'] : '?' );
+		}
+		$try    = add_query_arg( 'plakette_https_test', time(), $url );
+		$second = $ask( $try );
+		if ( $second && $second['https'] ) {
+			$out['cache']   = true;
+			$out['notes'][] = sprintf( __( 'Gegenprobe am Cache vorbei: %1$s → Antwort %2$d, Weiterleitung nach %3$s. WordPress selbst leitet also richtig weiter.', 'plakette' ), $try, $second['code'], $second['loc'] );
+			$out['notes'][] = sprintf(
+				__( 'Ursache: Ein Seiten-Cache%s liefert die gespeicherte Seite auch über http aus, bevor WordPress weiterleiten kann. Im Browser fällt das selten auf, weil er sich HTTPS merkt – wer aber einem alten http-Link folgt, bekommt die Seite unverschlüsselt.', 'plakette' ),
+				Plakette_Env::cache_plugin() ? ' (' . Plakette_Env::cache_plugin() . ')' : ''
+			);
+		} elseif ( $first['cached'] ) {
+			$out['notes'][] = __( 'Die Antwort kam aus einem Cache (siehe Kopfzeilen).', 'plakette' );
+		}
+		$https       = wp_remote_get( $home, array( 'redirection' => 0, 'timeout' => 10, 'sslverify' => false ) );
+		$hsts        = is_wp_error( $https ) ? '' : wp_remote_retrieve_header( $https, 'strict-transport-security' );
+		$hsts        = is_array( $hsts ) ? implode( ', ', $hsts ) : (string) $hsts;
+		$out['hsts'] = (bool) preg_match( '#max-age=["\']?([1-9]\d{5,})#i', $hsts );
+		if ( $out['hsts'] ) {
+			$out['notes'][] = sprintf( __( 'Die https-Adresse sendet „Strict-Transport-Security: %s“ – Browser, die schon einmal da waren, nutzen damit nur noch HTTPS.', 'plakette' ), $hsts );
+		}
+		$out['notes'][] = __( 'Selbst nachprüfen: Rufe die http-Adresse mit einem Werkzeug ab, das Weiterleitungen anzeigt (z. B. httpstatus.io). Der Browser taugt dafür nur bedingt – er wechselt oft von selbst auf https.', 'plakette' );
+		return $out;
+	}
+
+	/** The redirect in .htaccess: runs before PHP and therefore before every page cache. */
+	public static function htaccess_lines() {
+		return array(
+			'<IfModule mod_rewrite.c>',
+			'RewriteEngine On',
+			'RewriteCond %{HTTPS} !=on',
+			'RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]',
+			'RewriteCond %{HTTP:X-Forwarded-SSL} !on [NC]',
+			'RewriteCond %{REQUEST_URI} !^/\\.well-known/',
+			'RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]',
+			'</IfModule>',
+		);
 	}
 
 	public function fix( array $req, array &$undo ) {
@@ -118,7 +233,28 @@ class Plakette_Check_Https extends Plakette_Check {
 			}
 		}
 		Plakette_Log::set_module( 'force_https', true, $undo );
-		return __( 'Die Website läuft jetzt über HTTPS, http-Aufrufe werden weitergeleitet.', 'plakette' );
+		$note = '';
+		if ( 0 === strpos( home_url(), 'https://' ) && Plakette_Env::htaccess_writable() ) {
+			// Server rule in front of everything (page caches answer before WordPress can redirect).
+			$op = Plakette_Env::write_htaccess_block( self::MARKER, self::htaccess_lines(), true );
+			if ( ! is_wp_error( $op ) ) {
+				$test = wp_remote_get( add_query_arg( 'plakette_https_test', time(), home_url( '/' ) ), array( 'redirection' => 0, 'timeout' => 15, 'sslverify' => false ) );
+				$code = is_wp_error( $test ) ? 0 : (int) wp_remote_retrieve_response_code( $test );
+				if ( 200 !== $code ) {
+					// Redirect loop behind a proxy or rules not allowed: take it back at once.
+					Plakette_Env::write_htaccess_block( self::MARKER, array() );
+					$note = ' ' . sprintf( __( 'Die Server-Regel in der .htaccess hat auf diesem Server nicht funktioniert (Antwort %s) und wurde sofort wieder entfernt. Bitte deinen Hoster um eine serverseitige Weiterleitung von http auf https.', 'plakette' ), $code ? $code : __( 'keine', 'plakette' ) );
+				} else {
+					$undo[] = $op;
+				}
+			}
+		}
+		Plakette_Page_Cache::purge_all();
+		$probe = self::probe_http( home_url( '/' ) );
+		if ( $probe['open'] ) {
+			return __( 'Die Weiterleitung in WordPress ist eingeschaltet, die http-Adresse zeigt die Seite aber weiterhin an.', 'plakette' ) . $note . ( '' === $note ? ' ' . __( 'Leere den Cache deines Cache-Plugins und starte die Prüfung noch einmal.', 'plakette' ) : '' );
+		}
+		return __( 'Die Website läuft über HTTPS, http-Aufrufe werden weitergeleitet.', 'plakette' ) . $note;
 	}
 }
 

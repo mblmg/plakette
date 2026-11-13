@@ -25,9 +25,41 @@ class Plakette_Stats {
 		return $wpdb->prefix . 'plakette_stats';
 	}
 
+	/**
+	 * On when a fix switched the module on (a tracking service was replaced) or the user switched it on in
+	 * Einstellungen › „Besucherstatistik“.
+	 */
+	public static function active() {
+		if ( Plakette_Modules::on( 'stats' ) ) {
+			return true;
+		}
+		$all = get_option( Plakette_Settings::OPTION, array() );
+		return is_array( $all ) && ! empty( $all['stats']['enabled'] );
+	}
+
+	public static function settings_section( $sections ) {
+		$sections['stats'] = array(
+			'title'  => __( 'Besucherstatistik', 'plakette' ),
+			'desc'   => __( 'Die Plakette-Statistik zählt Seitenaufrufe ohne Cookies, ohne IP-Adressen und ohne Wiedererkennung von Besuchern – deshalb braucht sie keine Einwilligung und keinen Cookie-Banner. Du siehst Aufrufe pro Tag, die meistgelesenen Seiten, die Herkunft der Besucher und die Geräte. Die Auswertung erscheint oben auf dieser Seite im Abschnitt „Besucher – Plakette-Statistik“.', 'plakette' ),
+			'fields' => array(
+				array(
+					'key'     => 'enabled',
+					'label'   => __( 'Besuche zählen', 'plakette' ),
+					'type'    => 'toggle',
+					'default' => false,
+					'help'    => Plakette_Modules::on( 'stats' )
+						? __( 'Die Statistik wurde bereits über einen Prüfpunkt eingeschaltet (als Ersatz für einen Tracking-Dienst) und läuft. Abschalten kannst du sie dort im Protokoll mit „Rückgängig“.', 'plakette' )
+						: __( 'Angemeldete Nutzer und Suchmaschinen-Bots werden nicht gezählt. Beim Abschalten bleiben die bisherigen Zahlen erhalten.', 'plakette' ),
+				),
+			),
+		);
+		return $sections;
+	}
+
 	public static function boot() {
 		add_action( 'plakette_daily', array( __CLASS__, 'cleanup' ) );
-		if ( ! Plakette_Modules::on( 'stats' ) ) {
+		add_filter( 'plakette_settings_sections', array( __CLASS__, 'settings_section' ) );
+		if ( ! self::active() ) {
 			return;
 		}
 		self::maybe_install();
@@ -150,7 +182,11 @@ class Plakette_Stats {
 	/** Summary of the last $days days for the admin screen (null when the statistics are off). */
 	public static function summary( $days = 30 ) {
 		global $wpdb;
-		if ( ! Plakette_Modules::on( 'stats' ) || ! get_option( self::DB_OPTION ) ) {
+		if ( ! self::active() ) {
+			return null;
+		}
+		self::maybe_install();
+		if ( ! get_option( self::DB_OPTION ) ) {
 			return null;
 		}
 		$table = self::table();

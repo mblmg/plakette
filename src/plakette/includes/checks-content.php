@@ -218,6 +218,10 @@ class Plakette_Check_Post_Descriptions extends Plakette_Check {
 			$samples = $ctx->samples();
 			$missing = array();
 			foreach ( $samples as $id => $facts ) {
+				if ( ! Plakette_Legal::needs_seo_texts( $id ) ) {
+					unset( $samples[ $id ] );
+					continue;
+				}
 				if ( '' === (string) $facts['description'] ) {
 					$missing[] = array( 'label' => get_the_title( $id ), 'url' => (string) get_edit_post_link( $id, 'raw' ) );
 				}
@@ -234,11 +238,18 @@ class Plakette_Check_Post_Descriptions extends Plakette_Check {
 				)
 			);
 		}
-		$items = array();
-		$total = 0;
+		$items   = array();
+		$total   = 0;
+		$exempt  = 0;
 		foreach ( $posts as $post ) {
 			if ( (int) get_option( 'page_on_front' ) === $post->ID && '' === $plugin ) {
 				continue; // the home page has its own check
+			}
+			// Impressum, Datenschutz, AGB, Warenkorb … and pages hidden from Google: nobody searches for them, a
+			// description brings nothing (and a missing one is no defect).
+			if ( ! Plakette_Legal::needs_seo_texts( $post->ID ) ) {
+				++$exempt;
+				continue;
 			}
 			if ( '' !== $plugin && self::has_template( $post->post_type ) ) {
 				continue;
@@ -258,10 +269,12 @@ class Plakette_Check_Post_Descriptions extends Plakette_Check {
 				);
 			}
 		}
+		$notes = $exempt ? array( sprintf( _n( '%d Seite ist ausgenommen: Rechtliche Seiten (Impressum, Datenschutz, AGB …), Warenkorb und Kasse sowie für Google ausgeblendete Seiten brauchen keine Beschreibung.', '%d Seiten sind ausgenommen: Rechtliche Seiten (Impressum, Datenschutz, AGB …), Warenkorb und Kasse sowie für Google ausgeblendete Seiten brauchen keine Beschreibung.', $exempt, 'plakette' ), $exempt ) ) : array();
 		if ( ! $total ) {
-			return $this->pass( sprintf( __( 'Alle %d Beiträge und Seiten haben eine Beschreibung.', 'plakette' ), count( $posts ) ) );
+			return $this->pass( sprintf( __( 'Alle %d Beiträge und Seiten, die eine brauchen, haben eine Beschreibung.', 'plakette' ), count( $posts ) - $exempt ), $notes ? array( 'notes' => $notes ) : array() );
 		}
 		$extra = array(
+			'notes'      => $notes,
 			'items'      => $items,
 			'item_field' => array( 'label' => __( 'Beschreibung (120–155 Zeichen)', 'plakette' ), 'max' => 160, 'multiline' => true ),
 		);
@@ -269,7 +282,7 @@ class Plakette_Check_Post_Descriptions extends Plakette_Check {
 			$extra['fix_does'] = sprintf( __( 'Speichert die Beschreibungen direkt in %s – genau dort, wo du sie sonst im Bearbeitungsfenster einträgst. Vorschlag ist jeweils der Anfang des Textes; du kannst ihn hier ändern.', 'plakette' ), $plugin );
 		}
 		return $this->fail(
-			sprintf( _n( '%1$d von %2$d Beiträgen und Seiten hat keine Beschreibung.', '%1$d von %2$d Beiträgen und Seiten haben keine Beschreibung.', $total, 'plakette' ), $total, count( $posts ) ),
+			sprintf( _n( '%1$d von %2$d Beiträgen und Seiten hat keine Beschreibung.', '%1$d von %2$d Beiträgen und Seiten haben keine Beschreibung.', $total, 'plakette' ), $total, count( $posts ) - $exempt ),
 			$extra
 		);
 	}

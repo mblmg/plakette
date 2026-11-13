@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.2.0] - 2026-11-13
+
+### Neu
+- **Bereich „Rechtliches“:** Impressum und Pflichtangaben, Datenschutz/DSGVO, Cookie-Banner, fremde Server,
+  Kommentare und Barrierefreiheit (BFSG) stehen jetzt zusammen in einem eigenen Bereich. „Sicherheit“ enthält nur
+  noch den Schutz vor Angriffen. Die vier Bereiche heißen: Rechtliches, Sicherheit, Geschwindigkeit, SEO.
+  Gespeicherte Berichte werden beim Update einmalig umsortiert; der Verlauf der Bereichswerte beginnt neu.
+- **Vorladen von Schriften und CDN-Dateien** (Einstellungen › „Bilder und lokale Kopien“): Schriften vorladen
+  (mit Anzahl der Dateien), CDN-Dateien vorladen und ein Feld für weitere eigene Dateien.
+- **Besucherstatistik direkt einschalten** (Einstellungen › „Besucherstatistik“) – bisher ging das nur als Ersatz
+  beim Entfernen eines Tracking-Dienstes.
+- **HTTPS-Weiterleitung auf Server-Ebene:** Die Behebung trägt die Weiterleitung an den Anfang der `.htaccess`
+  ein (mit Selbsttest und automatischer Rücknahme), damit sie auch vor Seiten-Caches greift.
+
+### Behoben
+- **HTTPS-Befund mit Beleg:** Der Bericht zeigt genau, welche Adresse abgerufen wurde, was der Server geantwortet
+  hat und – per Gegenprobe am Cache vorbei – ob ein Seiten-Cache die Ursache ist (z. B. WP-Optimize liefert die
+  gespeicherte Seite auch über http aus, obwohl WordPress richtig weiterleitet).
+- **Große Bilder:** Bilder, die nur in der Mediathek liegen und auf keiner Seite verwendet werden, zählen nicht
+  mehr als Mangel. Plakette durchsucht dafür Inhalte, Page-Builder-Daten, Beitragsbilder, Galerien und
+  Theme-Einstellungen.
+- **Beschreibungen für Google:** Impressum, Datenschutzerklärung, AGB, Widerruf, Warenkorb/Kasse und Seiten, die
+  für Suchmaschinen ausgeblendet sind, brauchen keine Meta-Beschreibung und werden nicht mehr bemängelt.
+- **Einstellungen › Moderne Bildformate:** zeigt jetzt, wer die modernen Formate wirklich ausliefert (Plakette,
+  EWWW, CompressX …) statt nur „Ausgeschaltet“.
+- **Mobilansicht des Prüfberichts:** Titel der Prüfpunkte werden nicht mehr in eine schmale Spalte gequetscht,
+  Bereichs-Reiter und Einstellungen laufen nicht mehr aus dem Bildschirm, lange Adressen und Dateinamen umbrechen.
+
 ## [1.1.1] - 2026-11-10
 
 ### Behoben

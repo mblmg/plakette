@@ -884,12 +884,12 @@ class Plakette_Performance {
 		$sections['performance'] = array(
 			'title'  => __( 'Bilder und lokale Kopien', 'plakette' ),
 			'desc'   => __( 'Welche Bildformate dein Server erzeugen kann und was Plakette von fremden Servern auf deine Website geholt hat. Eingeschaltet werden diese Funktionen über die Prüfpunkte; abschalten kannst du sie im Protokoll mit „Rückgängig“. Ungenutzte Kopien räumt Plakette nach 30 Tagen automatisch weg.', 'plakette' ),
-			'fields' => array(
+			'fields' => array_merge( class_exists( 'Plakette_Preload' ) ? Plakette_Preload::fields() : array(), array(
 				array(
 					'key'   => 'images_info',
 					'label' => __( 'Moderne Bildformate (AVIF/WebP)', 'plakette' ),
 					'type'  => 'info',
-					'html'  => ( class_exists( 'Plakette_Modern_Images' ) && Plakette_Modern_Images::active() ? '' : '<p><em>' . esc_html__( 'Ausgeschaltet.', 'plakette' ) . '</em></p>' ) . ( class_exists( 'Plakette_Modern_Images' ) ? Plakette_Modern_Images::info_html() : '' ),
+					'html'  => class_exists( 'Plakette_Modern_Images' ) ? Plakette_Modern_Images::status_html() . Plakette_Modern_Images::info_html() : '',
 				),
 				array(
 					'key'   => 'fonts_info',
@@ -903,7 +903,7 @@ class Plakette_Performance {
 					'type'  => 'info',
 					'html'  => ( Plakette_Modules::on( 'cdn_local' ) ? '' : '<p><em>' . esc_html__( 'Ausgeschaltet.', 'plakette' ) . '</em></p>' ) . self::cdn_info_html(),
 				),
-			),
+			) ),
 		);
 		return $sections;
 	}

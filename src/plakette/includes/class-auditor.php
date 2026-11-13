@@ -12,11 +12,49 @@ class Plakette_Auditor {
 	/** Report areas: key => label. Order = order of tabs and meters. */
 	public static function areas() {
 		return array(
-			'privacy'  => __( 'Datenschutz', 'plakette' ),
+			'legal'    => __( 'Rechtliches', 'plakette' ),
 			'security' => __( 'Sicherheit', 'plakette' ),
 			'speed'    => __( 'Geschwindigkeit', 'plakette' ),
 			'seo'      => __( 'SEO', 'plakette' ),
 		);
+	}
+
+	/**
+	 * Reports and score history stored by versions before 1.2.0 used the areas privacy + security (legal checks were
+	 * part of "security"). Sorts the stored checks into the current areas and recalculates the scores – once.
+	 */
+	public static function migrate() {
+		if ( '2' === get_option( 'plakette_areas_version' ) ) {
+			return;
+		}
+		update_option( 'plakette_areas_version', '2', false );
+		$report = get_option( self::OPTION );
+		if ( is_array( $report ) && ! empty( $report['checks'] ) ) {
+			$area = array();
+			foreach ( self::classes() as $class ) {
+				if ( class_exists( $class ) ) {
+					$check              = new $class();
+					$area[ $check->id ] = $check->area;
+				}
+			}
+			foreach ( $report['checks'] as $i => $c ) {
+				if ( isset( $c['id'], $area[ $c['id'] ] ) ) {
+					$report['checks'][ $i ]['area'] = $area[ $c['id'] ];
+				}
+			}
+			$report['scores'] = self::scores( $report['checks'] );
+			update_option( self::OPTION, $report, false );
+		}
+		$history = get_option( 'plakette_history' );
+		if ( is_array( $history ) ) {
+			foreach ( $history as $i => $entry ) {
+				if ( is_array( $entry ) && isset( $entry['privacy'] ) ) {
+					// Not comparable with the new area – the trend starts again with the next audit.
+					unset( $history[ $i ]['privacy'], $history[ $i ]['security'] );
+				}
+			}
+			update_option( 'plakette_history', $history, false );
+		}
 	}
 
 	/** Base checks; the files checks-*.php add theirs through the filter "plakette_checks". */

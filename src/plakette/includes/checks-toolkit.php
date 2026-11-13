@@ -69,7 +69,7 @@ class Plakette_Check_Image_Dims extends Plakette_Check {
 
 class Plakette_Check_Cdn_Files extends Plakette_Check {
 	public $id        = 'privacy_cdn';
-	public $area      = 'privacy';
+	public $area      = 'legal';
 	public $group     = 'Fremde Server';
 	public $weight    = 6;
 	public $title     = 'Skripte und Stylesheets kommen vom eigenen Server';
@@ -166,7 +166,7 @@ class Plakette_Check_Cdn_Files extends Plakette_Check {
 
 class Plakette_Check_A11y_Animations extends Plakette_Check {
 	public $id        = 'a11y_animations';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = 'Barrierefreiheit (BFSG)';
 	public $weight    = 4;
 	public $title     = 'Einblendanimationen sind für alle lesbar';
@@ -208,7 +208,7 @@ class Plakette_Check_A11y_Animations extends Plakette_Check {
 
 class Plakette_Check_A11y_Link_Names extends Plakette_Check {
 	public $id        = 'a11y_link_names';
-	public $area      = 'security';
+	public $area      = 'legal';
 	public $group     = 'Barrierefreiheit (BFSG)';
 	public $weight    = 5;
 	public $title     = 'Alle Links haben eine Beschriftung';

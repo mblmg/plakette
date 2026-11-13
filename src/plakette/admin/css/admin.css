@@ -854,6 +854,24 @@
 	padding: 4px 6px;
 }
 
+/* Long words, file names and addresses (hashes, URLs) wrap instead of pushing the page wider than the screen. */
+.plk-row-text,
+.plk-row-body,
+.plk-panel-note,
+.plk-notes li,
+.plk-items,
+.plk-links,
+.plk-field,
+.plk-table td,
+.plk-log-list li {
+	overflow-wrap: anywhere;
+	min-width: 0;
+}
+.plk code {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
 /* ---------------------------------------------------------------- responsive */
 
 @media (max-width: 960px) {
@@ -894,8 +912,29 @@
 	.plk-row-head {
 		flex-wrap: wrap;
 	}
+	/* The title takes the whole line; the quick-fix button wraps below instead of squeezing the text. */
+	.plk-row-toggle {
+		flex: 1 1 100%;
+	}
 	.plk-row-head .plk-btn {
 		margin: 0 0 12px 40px;
+		max-width: calc(100% - 40px);
+		white-space: normal;
+	}
+	.plk-set-body {
+		padding-left: 0;
+	}
+	.plk-panel-head {
+		flex-wrap: wrap;
+	}
+	.plk-tabs {
+		display: flex;
+		flex-wrap: wrap;
+		max-width: 100%;
+	}
+	.plk-tab {
+		flex: 1 1 auto;
+		padding: 4px 12px;
 	}
 	.plk-area {
 		display: none;
@@ -922,7 +961,7 @@
 }
 
 /* ---------------------------------------------------------------- areas, fields, settings (v1.0) */
-.plk-area.is-privacy { color: #5b3e96; border-color: #cfc2ea; }
+.plk-area.is-legal { color: #5b3e96; border-color: #cfc2ea; }
 .plk-area.is-security { color: #8a2c1d; border-color: #ecc5bd; }
 .plk-area.is-speed { color: #1f4e79; border-color: #bcd0e4; }
 .plk-area.is-seo { color: #11734b; border-color: #b9dccb; }
@@ -937,7 +976,7 @@
 }
 .plk-fields {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
 	gap: 14px 20px;
 	max-width: 56em;
 	align-items: start;
@@ -1025,8 +1064,21 @@
 .plk-set-body {
 	padding: 6px 0 14px 26px;
 	display: grid;
+	/* minmax(0, …): the column may never grow wider than the panel (long help texts wrap instead). */
+	grid-template-columns: minmax(0, 1fr);
 	gap: 14px;
 	justify-items: start;
+}
+.plk-set-body > *,
+.plk-field > * {
+	min-width: 0;
+	max-width: 100%;
+}
+.plk-switch {
+	max-width: 100%;
+}
+.plk-switch input {
+	flex: 0 0 auto;
 }
 .plk-set-body .plk-fields { width: 100%; }
 .plk-update { margin: 0 !important; }

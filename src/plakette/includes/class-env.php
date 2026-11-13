@@ -94,7 +94,11 @@ class Plakette_Env {
 	}
 
 	/** Adds rules inside our own marker block; returns undo op or WP_Error. */
-	public static function write_htaccess_block( $marker, array $lines ) {
+	/**
+	 * @param bool $top Put a new block at the very start of the file: rules that must run before the WordPress
+	 *                  block (redirects) – WordPress' own rules end with [L] and would win otherwise.
+	 */
+	public static function write_htaccess_block( $marker, array $lines, $top = false ) {
 		if ( ! self::htaccess_writable() ) {
 			return new WP_Error( 'plakette_htaccess', __( 'Die Datei .htaccess ist nicht beschreibbar.', 'plakette' ) );
 		}
@@ -102,6 +106,15 @@ class Plakette_Env {
 			require_once ABSPATH . 'wp-admin/includes/misc.php';
 		}
 		$path = self::htaccess_path();
+		if ( $top ) {
+			$old = file_exists( $path ) ? (string) file_get_contents( $path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions
+			if ( false === strpos( $old, '# BEGIN ' . $marker ) ) {
+				// insert_with_markers() fills an existing block in place – create the (empty) block where it belongs.
+				if ( false === file_put_contents( $path, '# BEGIN ' . $marker . "\n# END " . $marker . "\n\n" . $old, LOCK_EX ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions
+					return new WP_Error( 'plakette_htaccess', __( 'Die Datei .htaccess konnte nicht geschrieben werden.', 'plakette' ) );
+				}
+			}
+		}
 		$ok   = insert_with_markers( $path, $marker, $lines );
 		if ( ! $ok ) {
 			return new WP_Error( 'plakette_htaccess', __( 'Die Datei .htaccess konnte nicht geschrieben werden.', 'plakette' ) );
