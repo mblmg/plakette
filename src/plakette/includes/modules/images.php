@@ -1203,6 +1203,40 @@ class Plakette_Image_Usage {
 		$file = '' !== $file ? $file : (string) get_attached_file( $attachment_id );
 		return '' !== $file && isset( $index['names'][ self::key( $file ) ] );
 	}
+
+	/**
+	 * Public addresses of published pages that show this library image (post content or builder data).
+	 * Templates and global blocks have no address of their own and are not returned.
+	 *
+	 * @return string[] up to $limit permalinks
+	 */
+	public static function pages( $attachment_id, $file = '', $limit = 3 ) {
+		global $wpdb;
+		$file = '' !== $file ? $file : (string) get_attached_file( $attachment_id );
+		$key  = '' !== $file ? self::key( $file ) : '';
+		if ( strlen( $key ) < 4 ) {
+			return array();
+		}
+		$like = '%' . $wpdb->esc_like( $key ) . '%';
+		$ids  = array_merge(
+			(array) $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type NOT IN ('attachment','revision') AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY post_modified DESC LIMIT 20", $like, '%wp-image-' . (int) $attachment_id . '%' ) ), // phpcs:ignore WordPress.DB
+			(array) $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT p.ID FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.post_status = 'publish' AND p.post_type NOT IN ('attachment','revision') AND ( pm.meta_value LIKE %s OR ( pm.meta_key = '_thumbnail_id' AND pm.meta_value = %s ) ) LIMIT 20", $like, (string) (int) $attachment_id ) ) // phpcs:ignore WordPress.DB
+		);
+		$out = array();
+		foreach ( array_unique( array_map( 'intval', $ids ) ) as $id ) {
+			if ( ! is_post_publicly_viewable( $id ) || post_password_required( $id ) ) {
+				continue;
+			}
+			$url = get_permalink( $id );
+			if ( $url ) {
+				$out[ $url ] = $url;
+			}
+			if ( count( $out ) >= $limit ) {
+				break;
+			}
+		}
+		return array_values( $out );
+	}
 }
 
 add_action( 'plakette_boot', array( 'Plakette_Image_Usage', 'boot' ) );

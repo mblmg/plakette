@@ -214,6 +214,9 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 	/** Delivered images heavier than this (at the candidate a browser picks) are flagged. */
 	const MAX_DELIVERED = 250000;
 
+	/** Max. extra pages fetched per audit to see how images that are only used elsewhere really get delivered. */
+	const MAX_EXTRA_PAGES = 6;
+
 	public function run( Plakette_Context $ctx ) {
 		global $wpdb;
 		// What visitors really download (home + sample pages): format and bytes of the picked candidate.
@@ -221,9 +224,16 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 		$heavy     = array();
 		$covered   = 0;
 		$who       = array();
-		if ( $ctx->home_ok() ) {
-			foreach ( Plakette_Image_Delivery::raster( Plakette_Image_Delivery::for_context( $ctx ) ) as $row ) {
-				$bytes = max( (int) $row['desktop']['bytes'], (int) $row['mobile']['bytes'] );
+		$seen      = array();
+		$add_rows  = function ( array $rows, $page ) use ( &$delivered, &$heavy, &$who, &$seen ) {
+			foreach ( Plakette_Image_Delivery::raster( $rows ) as $row ) {
+				$k = $row['fallback'] . '|' . $row['via'];
+				if ( isset( $seen[ $k ] ) ) {
+					continue;
+				}
+				$seen[ $k ]  = true;
+				$row['page'] = $row['page'] ?? $page;
+				$bytes       = max( array_map( fn( $vp ) => (int) $row[ $vp ]['bytes'], self::viewports( $row ) ) );
 				if ( $row['attachment'] ) {
 					$delivered[ $row['attachment'] ] = max( $delivered[ $row['attachment'] ] ?? 0, $bytes );
 				}
@@ -233,13 +243,12 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 					$who[ $row['who'] ] = true;
 				}
 			}
+		};
+		if ( $ctx->home_ok() ) {
+			$add_rows( Plakette_Image_Delivery::for_context( $ctx ), '' );
 		}
 		$ids   = $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type IN ('image/jpeg','image/png','image/webp') ORDER BY ID DESC LIMIT 2000" );
-		$items        = array();
-		$total        = 0;
-		$notes        = array();
-		$unused       = 0;
-		$unused_bytes = 0;
+		$big   = array();
 		foreach ( $ids as $id ) {
 			$id   = (int) $id;
 			$file = get_attached_file( $id );
@@ -253,6 +262,47 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 			if ( $bytes <= self::MAX_BYTES && max( $w, $h ) <= self::MAX_SIDE ) {
 				continue;
 			}
+			$big[ $id ] = array( $file, $bytes, $w, $h );
+		}
+
+		// Big images used on pages outside the sample: open those pages and look at what a browser picks there –
+		// a page usually shows a smaller size from the srcset, not the original.
+		if ( $ctx->home_ok() ) {
+			$fetched = array( home_url( '/' ) => true );
+			foreach ( $ctx->all_html() as $pid => $html ) {
+				if ( $pid ) {
+					$fetched[ (string) get_permalink( $pid ) ] = true;
+				}
+			}
+			$extra = 0;
+			foreach ( $big as $id => $info ) {
+				if ( isset( $delivered[ $id ] ) || $extra >= self::MAX_EXTRA_PAGES || ! Plakette_Image_Usage::is_used( $id, $info[0] ) ) {
+					continue;
+				}
+				foreach ( Plakette_Image_Usage::pages( $id, $info[0] ) as $url ) {
+					if ( isset( $delivered[ $id ] ) || $extra >= self::MAX_EXTRA_PAGES ) {
+						break;
+					}
+					if ( isset( $fetched[ $url ] ) ) {
+						continue;
+					}
+					$fetched[ $url ] = true;
+					++$extra;
+					$res = Plakette_Crawler::fetch( $url );
+					if ( $res['ok'] && $res['status'] < 400 ) {
+						$add_rows( Plakette_Image_Delivery::analyse( $res['body'], $res['url'] ), $res['url'] );
+					}
+				}
+			}
+		}
+
+		$items        = array();
+		$total        = 0;
+		$notes        = array();
+		$unused       = 0;
+		$unused_bytes = 0;
+		foreach ( $big as $id => $info ) {
+			list( $file, $bytes, $w, $h ) = $info;
 			// A big original only costs visitors when they get it: judge what is delivered, not the library.
 			if ( isset( $delivered[ $id ] ) && $delivered[ $id ] <= self::MAX_DELIVERED ) {
 				++$covered;
@@ -269,6 +319,10 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 				++$covered;
 				continue;
 			}
+			// Visitors get a size WordPress made from it, not the original: shrinking the original changes nothing.
+			if ( isset( $delivered[ $id ] ) && ! self::gets_original( $heavy, $id, $file ) ) {
+				continue;
+			}
 			$total  += $bytes;
 			$items[] = array(
 				'id'    => 'att:' . $id,
@@ -282,6 +336,8 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 		foreach ( $heavy as $row ) {
 			if ( ! $row['attachment'] ) {
 				$notes[] = Plakette_Image_Delivery::describe( $row ) . ' ' . __( '(nicht aus der Mediathek – im Theme/Page Builder verkleinern)', 'plakette' );
+			} elseif ( isset( $big[ $row['attachment'] ] ) && ! self::gets_original( array( $row ), $row['attachment'], $big[ $row['attachment'] ][0] ) ) {
+				$notes[] = sprintf( __( '%1$s – eine von WordPress erzeugte Bildgröße, nicht das Original. Prüfe, ob das Bild auf der Seite kleiner angezeigt werden kann.', 'plakette' ), self::delivered_names( $row ) );
 			}
 		}
 		if ( $covered ) {
@@ -304,7 +360,9 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 			);
 		}
 		if ( ! $items ) {
-			$detail = __( 'Besucher laden keine unnötig großen Bilder.', 'plakette' );
+			$detail = $notes && count( $notes ) > $info
+				? __( 'Kein Original ist zu groß – aber manche Bilder kommen bei Besuchern noch recht schwer an.', 'plakette' )
+				: __( 'Besucher laden keine unnötig großen Bilder.', 'plakette' );
 			return $notes && count( $notes ) > $info
 				? $this->warn( $detail, array( 'notes' => $notes, 'kind' => 'none' ) )
 				: $this->pass( $detail, $notes ? array( 'notes' => $notes ) : array() );
@@ -313,6 +371,55 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 			return $this->fail( __( 'Große Bilder gefunden.', 'plakette' ), array( 'items' => $items, 'notes' => $notes, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie die PHP-Erweiterung GD oder Imagick, damit WordPress Bilder bearbeiten kann.', 'plakette' ) ) ) );
 		}
 		return $this->fail( sprintf( _n( '%1$d Bild, das auf deiner Website verwendet wird, ist %2$s groß.', '%1$d Bilder, die auf deiner Website verwendet werden, sind zusammen %2$s groß.', count( $items ), 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items, 'notes' => $notes ) );
+	}
+
+	/**
+	 * Viewports whose pick can be trusted. With sizes="auto" (lazy images) the browser uses the width the image really
+	 * has on the page – on a phone that is about the screen width, on a desktop usually a column we cannot see from here.
+	 */
+	private static function viewports( array $row ) {
+		$auto = fn( $s ) => str_starts_with( strtolower( trim( (string) $s ) ), 'auto' );
+		return ! empty( $row['width'] ) && ( $auto( $row['sizes'] ?? '' ) || $auto( $row['img_sizes'] ?? '' ) ) ? array( 'mobile' ) : array( 'desktop', 'mobile' );
+	}
+
+	/** Does any heavy delivery of attachment $id hand out the original file (or its WebP/AVIF copy)? */
+	private static function gets_original( array $heavy, $id, $file ) {
+		$orig = strtolower( wp_basename( $file ) );
+		foreach ( $heavy as $row ) {
+			if ( (int) $row['attachment'] !== (int) $id ) {
+				continue;
+			}
+			foreach ( self::viewports( $row ) as $vp ) {
+				if ( (int) $row[ $vp ]['bytes'] <= self::MAX_DELIVERED ) {
+					continue;
+				}
+				$name = strtolower( rawurldecode( wp_basename( (string) wp_parse_url( $row[ $vp ]['url'], PHP_URL_PATH ) ) ) );
+				$name = preg_replace( '/\.(jpe?g|png)\.(webp|avif)$/', '.$1', $name );
+				if ( $name === $orig || preg_replace( '/\.\w+$/', '', $name ) === preg_replace( '/\.\w+$/', '', $orig ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** "bild-1536x1231.jpg.webp – 296 KB am Handy" for a heavy library image (the file really loaded). */
+	private static function delivered_names( array $row ) {
+		$name = fn( $u ) => rawurldecode( wp_basename( (string) wp_parse_url( $u, PHP_URL_PATH ) ) );
+		$m    = $row['mobile'];
+		$d    = $row['desktop'];
+		$vps  = self::viewports( $row );
+		if ( $m['url'] === $d['url'] && 2 === count( $vps ) ) {
+			return sprintf( '%s (%s)', $name( $d['url'] ), self::size( max( $m['bytes'], $d['bytes'] ) ) );
+		}
+		$parts = array();
+		if ( $m['bytes'] > self::MAX_DELIVERED ) {
+			$parts[] = sprintf( __( '%1$s am Handy (%2$s)', 'plakette' ), $name( $m['url'] ), self::size( $m['bytes'] ) );
+		}
+		if ( in_array( 'desktop', $vps, true ) && $d['bytes'] > self::MAX_DELIVERED ) {
+			$parts[] = sprintf( __( '%1$s am Desktop (%2$s)', 'plakette' ), $name( $d['url'] ), self::size( $d['bytes'] ) );
+		}
+		return implode( ', ', $parts );
 	}
 
 	public function fix( array $req, array &$undo ) {
