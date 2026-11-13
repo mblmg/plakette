@@ -3,7 +3,7 @@
  * Plugin Name:       Plakette – Website-Hauptuntersuchung
  * Plugin URI:        https://github.com/mblmg/plakette
  * Description:       Die Hauptuntersuchung für deine WordPress-Website: prüft Datenschutz, Sicherheit, Geschwindigkeit und SEO, erklärt jeden Mangel in einfachen Worten und behebt ihn auf Knopfdruck – jederzeit rückgängig. Aktualisiert sich automatisch aus GitHub.
- * Version:           1.3.0
+ * Version:           1.4.0
  * Requires at least: 6.5
  * Requires PHP:      8.2
  * Author:            i-make.media | Magnus Brühl
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PLAKETTE_VERSION', '1.3.0' );
+define( 'PLAKETTE_VERSION', '1.4.0' );
 define( 'PLAKETTE_SLUG', 'plakette' );
 define( 'PLAKETTE_REPO', 'mblmg/plakette' );
 define( 'PLAKETTE_FILE', __FILE__ );
