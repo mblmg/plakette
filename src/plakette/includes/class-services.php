@@ -547,6 +547,32 @@ class Plakette_Services {
 	}
 
 	/** Knowledge-base entry for a cookie or storage key; unknown names get a "depends" entry. */
+	/**
+	 * Cookies and storage keys that browser extensions of the person measuring write (Dark Reader, password
+	 * managers, Grammarly, ad blockers …). They do not come from the website and are never a finding.
+	 * Filter: plakette_extension_storage (list of regular expressions).
+	 */
+	public static function is_extension_storage( $name ) {
+		$res = apply_filters(
+			'plakette_extension_storage',
+			array(
+				'/dark-?reader/i',                  // Dark Reader (darkreader-*, __darkreader__*).
+				'/^__?grammarly|^grammarly/i',      // Grammarly.
+				'/^(__lpform|lastpass)/i',          // LastPass.
+				'/bitwarden|1password|^_1p_|^dashlane|^nordpass|^proton-?pass/i', // Password managers.
+				'/^(ublock|adblock|adguard|ghostery|abp-|__abp|privacy-?badger)/i', // Ad and tracker blockers.
+				'/^(__?metamask|languagetool|wappalyzer|react-devtools|__REACT_DEVTOOLS|vue-devtools|__VUE_DEVTOOLS)/i', // Helpers and dev tools.
+				'/^(colorzilla|whatfont|stylus|tampermonkey|violentmonkey|greasemonkey|night-?eye|noir-|midnight-lizard)/i', // Styling and script extensions.
+			)
+		);
+		foreach ( (array) $res as $re ) {
+			if ( @preg_match( $re, (string) $name ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static function classify_storage( $name ) {
 		$name = (string) $name;
 		foreach ( self::storage_kb() as $e ) {

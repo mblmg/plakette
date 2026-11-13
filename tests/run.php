@@ -38,6 +38,7 @@ if ( 'audit' === $step ) {
 				'street' => 'Münsterplatz 7', 'zip' => '79098', 'city' => 'Freiburg im Breisgau', 'country' => 'DE',
 				'phone' => '+49 761 123456', 'email' => 'info@konditorei-sonnenschein.example', 'vat_id' => 'DE123456789',
 				'register' => 'Amtsgericht Freiburg, HRB 712345', 'opening_hours' => "Di-Fr 9-18\nSa 8-14",
+				'gbp_url' => 'https://maps.app.goo.gl/TestKonditorei',
 			);
 			$req['value'] = array();
 			foreach ( $c['form']['fields'] as $f ) {

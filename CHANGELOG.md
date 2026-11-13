@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0] - 2026-11-13
+
+### Neu
+- **Google-Unternehmensprofil verknüpfen und abgleichen:** neues Feld „Google-Unternehmensprofil (Link)“ in den
+  Firmendaten – der Link landet als `sameAs`/`hasMap` im Firmenprofil für Google. Mit einem eigenen API-Schlüssel
+  (Einstellungen › „Google-Unternehmensprofil“, Places API (New)) liest Plakette das Profil und vergleicht Name,
+  Adresse, Telefon und Öffnungszeiten mit den Firmendaten. Abweichungen lassen sich mit einem Klick übernehmen
+  (rückgängig machbar). Plakette liest nur – am Profil bei Google ändert sich nichts.
+- **Breakdance-Inhalte für Yoast SEO und Rank Math:** Beim Bearbeiten einer Breakdance-Seite reicht Plakette den Text
+  aus Breakdance an die Inhaltsanalyse weiter (statt „0 Wörter“) und ergänzt die Wortzahl im Article-Schema von Yoast.
+  Abschaltbar unter Einstellungen › Breakdance.
+- **Sicherungen als erfüllt markieren:** Läuft die Sicherung über den Server, lässt sich der Punkt abhaken
+  (rückgängig im Protokoll). Hoster können `define( 'PLAKETTE_BACKUPS', 'Name' );` setzen.
+
+### Behoben
+- **Breakdance-Seiten werden richtig gelesen:** „Sehr kurze Beiträge“ (bisher 0 Wörter), Bilder ohne Alternativtext,
+  mehrere H1, kaputte Links, Titel- und Beschreibungsvorschläge, OS-Plattform-Link, veraltete Gesetzesnamen, Einbettungen
+  (YouTube, Karten, iframes) und VG-Wort-Pixel berücksichtigen jetzt den Breakdance-Inhalt – auch in Breakdance-Headern,
+  -Footern und -Vorlagen. Korrekturen werden direkt im Breakdance-Layout gespeichert und lassen sich rückgängig machen.
+- **Cookie-Banner:** Cookies und Speicher-Einträge von Browser-Erweiterungen (z. B. Dark Reader, Passwortmanager,
+  Grammarly, Werbeblocker) zählen nicht mehr als Fund der Website.
+- **Protokoll:** Rückgängig machen von Werten mit Backslashes (z. B. JSON) beschädigt sie nicht mehr.
+
 ## [1.2.0] - 2026-11-13
 
 ### Neu

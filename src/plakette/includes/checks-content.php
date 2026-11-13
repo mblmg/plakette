@@ -21,6 +21,25 @@ class Plakette_Check_Alt_Text extends Plakette_Check {
 		$items = array();
 		$seen  = array();
 		foreach ( $ctx->posts() as $post ) {
+			if ( Plakette_Breakdance::builds( $post->ID ) ) {
+				// Breakdance: images live in the element tree (image elements and <img> in rich text).
+				foreach ( self::breakdance_images( $post->ID ) as $n => $img ) {
+					if ( '' !== $img['alt'] || count( $items ) >= 300 ) {
+						continue;
+					}
+					$items[] = array(
+						'id'    => 'b:' . $post->ID . ':' . $n,
+						'label' => wp_basename( (string) wp_parse_url( $img['url'], PHP_URL_PATH ) ),
+						'sub'   => sprintf( __( 'in „%s“ (Breakdance)', 'plakette' ), get_the_title( $post ) ),
+						'thumb' => $img['url'],
+						'value' => self::suggest( $img['id'], $img['url'], $post ),
+						'link'  => get_permalink( $post ),
+					);
+					if ( $img['id'] ) {
+						$seen[ $img['id'] ] = true;
+					}
+				}
+			}
 			$p = new WP_HTML_Tag_Processor( $post->post_content );
 			$n = 0;
 			while ( $p->next_tag( 'img' ) ) {
@@ -62,6 +81,71 @@ class Plakette_Check_Alt_Text extends Plakette_Check {
 			}
 		}
 		return $items;
+	}
+
+	/**
+	 * Images of a Breakdance post in a fixed order (element images first, then <img> in HTML strings, per element).
+	 * With $alts (index => text) the alt texts are written into the tree (undoable); returns what was found.
+	 *
+	 * @return array[] index => [ url, id, alt ]
+	 */
+	public static function breakdance_images( $post_id, array $alts = array(), ?array &$undo = null, &$done = 0 ) {
+		$found = array();
+		$n     = 0;
+		$write = null !== $undo;
+		Plakette_Breakdance::visit(
+			$post_id,
+			function ( $node ) use ( &$found, &$n, $alts, $write, &$undo, &$done ) {
+				$content = Plakette_Breakdance::content_of( $node );
+				if ( null === $content ) {
+					return 0;
+				}
+				$changes = 0;
+				Plakette_Breakdance::map_images(
+					$content,
+					function ( $img ) use ( &$found, &$n, $alts, $write, &$undo, &$done, &$changes ) {
+						$a          = (array) $img;
+						$id         = isset( $a['id'] ) ? max( 0, (int) $a['id'] ) : 0;
+						$found[ $n ] = array( 'url' => (string) $a['url'], 'id' => $id, 'alt' => Plakette_Breakdance::image_alt( $a ) );
+						if ( $write && isset( $alts[ $n ] ) && is_object( $img ) ) {
+							$img->alt = $alts[ $n ];
+							if ( $id && '' === trim( (string) get_post_meta( $id, '_wp_attachment_image_alt', true ) ) ) {
+								Plakette_Log::set_postmeta( $id, '_wp_attachment_image_alt', $alts[ $n ], $undo );
+							}
+							++$changes;
+							++$done;
+						}
+						++$n;
+						return $img;
+					}
+				);
+				Plakette_Breakdance::map_strings(
+					$content,
+					function ( $str ) use ( &$found, &$n, $alts, $write, &$done, &$changes ) {
+						if ( false === stripos( $str, '<img' ) ) {
+							return $str;
+						}
+						$p = new WP_HTML_Tag_Processor( $str );
+						while ( $p->next_tag( 'img' ) ) {
+							$src = (string) $p->get_attribute( 'src' );
+							$id  = preg_match( '/\bwp-image-(\d+)\b/', (string) $p->get_attribute( 'class' ), $m ) ? (int) $m[1] : 0;
+							$alt = trim( (string) $p->get_attribute( 'alt' ) );
+							$found[ $n ] = array( 'url' => $src, 'id' => $id, 'alt' => $alt );
+							if ( $write && isset( $alts[ $n ] ) ) {
+								$p->set_attribute( 'alt', $alts[ $n ] );
+								++$changes;
+								++$done;
+							}
+							++$n;
+						}
+						return $write ? $p->get_updated_html() : $str;
+					}
+				);
+				return $changes;
+			},
+			$undo
+		);
+		return $found;
 	}
 
 	/** Best available description: existing alt, a real title, caption, a readable file name, then the post title. */
@@ -119,6 +203,7 @@ class Plakette_Check_Alt_Text extends Plakette_Check {
 
 	public function fix( array $req, array &$undo ) {
 		$by_post = array();
+		$by_bd   = array();
 		$done    = 0;
 		foreach ( (array) ( isset( $req['items'] ) ? $req['items'] : array() ) as $item ) {
 			$value = sanitize_text_field( isset( $item['value'] ) ? $item['value'] : '' );
@@ -131,6 +216,13 @@ class Plakette_Check_Alt_Text extends Plakette_Check {
 				++$done;
 			} elseif ( preg_match( '/^p:(\d+):(\d+)$/', $id, $m ) ) {
 				$by_post[ (int) $m[1] ][ (int) $m[2] ] = $value;
+			} elseif ( preg_match( '/^b:(\d+):(\d+)$/', $id, $m ) ) {
+				$by_bd[ (int) $m[1] ][ (int) $m[2] ] = $value;
+			}
+		}
+		foreach ( $by_bd as $post_id => $alts ) {
+			if ( current_user_can( 'edit_post', $post_id ) ) {
+				self::breakdance_images( $post_id, $alts, $undo, $done );
 			}
 		}
 		foreach ( $by_post as $post_id => $alts ) {
@@ -350,7 +442,7 @@ class Plakette_Check_Titles extends Plakette_Check {
 				$items[] = $base + array(
 					'label' => __( '(ohne Titel)', 'plakette' ),
 					'sub'   => __( 'Titel fehlt', 'plakette' ),
-					'value' => Plakette_Modules::shorten( wp_trim_words( wp_strip_all_tags( excerpt_remove_blocks( $post->post_content ) ), 8, '' ), 60 ),
+					'value' => Plakette_Modules::shorten( wp_trim_words( wp_strip_all_tags( excerpt_remove_blocks( Plakette_Breakdance::content_for( $post ) ) ), 8, '' ), 60 ),
 				);
 			} elseif ( $counts[ mb_strtolower( $title ) ] > 1 ) {
 				$cats    = get_the_category( $post->ID );
@@ -424,7 +516,7 @@ class Plakette_Check_Content_H1 extends Plakette_Check {
 	public function run( Plakette_Context $ctx ) {
 		$items = array();
 		foreach ( $ctx->posts() as $post ) {
-			$count = preg_match_all( '/<h1[\s>]/i', $post->post_content );
+			$count = preg_match_all( '/<h1[\s>]/i', Plakette_Breakdance::content_for( $post ) );
 			if ( $count ) {
 				$items[] = array(
 					'id'    => 'post:' . $post->ID,
@@ -446,6 +538,36 @@ class Plakette_Check_Content_H1 extends Plakette_Check {
 			}
 		}
 		return $this->fail( sprintf( _n( '%d Seite hat zusätzliche H1-Überschriften.', '%d Seiten haben zusätzliche H1-Überschriften.', count( $items ), 'plakette' ), count( $items ) ), array( 'items' => $items ) );
+	}
+
+	/** H1 → H2 in a Breakdance tree: heading elements and <h1> in HTML strings. @return int changes */
+	public static function demote_breakdance( $post_id, array &$undo ) {
+		return Plakette_Breakdance::visit(
+			$post_id,
+			function ( $node ) {
+				$content = Plakette_Breakdance::content_of( $node );
+				if ( ! is_object( $content ) ) {
+					return 0;
+				}
+				$n = 0;
+				if ( isset( $content->content ) && is_object( $content->content ) && isset( $content->content->tags ) && 'h1' === strtolower( (string) $content->content->tags ) ) {
+					$content->content->tags = 'h2';
+					++$n;
+				}
+				Plakette_Breakdance::map_strings(
+					$content,
+					function ( $str ) use ( &$n ) {
+						if ( ! preg_match( '/<h1[\s>]/i', $str ) ) {
+							return $str;
+						}
+						++$n;
+						return self::demote( $str );
+					}
+				);
+				return $n;
+			},
+			$undo
+		);
 	}
 
 	public static function demote( $html ) {
@@ -472,6 +594,9 @@ class Plakette_Check_Content_H1 extends Plakette_Check {
 				continue;
 			}
 			$post = get_post( (int) $m[1] );
+			if ( Plakette_Breakdance::builds( $post->ID ) ) {
+				$done += min( 1, self::demote_breakdance( $post->ID, $undo ) );
+			}
 			$new  = self::demote( $post->post_content );
 			if ( $new !== $post->post_content ) {
 				$undo[] = array( 'post_field', $post->ID, 'post_content', $post->post_content );
@@ -496,9 +621,7 @@ class Plakette_Check_Thin_Content extends Plakette_Check {
 	public $kind      = 'items';
 
 	public static function words( $content ) {
-		$text = wp_strip_all_tags( strip_shortcodes( excerpt_remove_blocks( $content ) ) );
-		$text = trim( html_entity_decode( $text, ENT_QUOTES, 'UTF-8' ) );
-		return '' === $text ? 0 : count( preg_split( '/\s+/u', $text ) );
+		return Plakette_Breakdance::words( $content );
 	}
 
 	public function run( Plakette_Context $ctx ) {
@@ -507,7 +630,8 @@ class Plakette_Check_Thin_Content extends Plakette_Check {
 			if ( 'post' !== $post->post_type || get_post_meta( $post->ID, '_plakette_noindex', true ) ) {
 				continue;
 			}
-			$words = self::words( $post->post_content );
+			// Breakdance keeps the text in its element tree, not in the post content.
+			$words = self::words( Plakette_Breakdance::content_for( $post ) );
 			if ( $words < 300 ) {
 				$items[] = array(
 					'id'    => 'post:' . $post->ID,
@@ -553,7 +677,7 @@ class Plakette_Check_Broken_Links extends Plakette_Check {
 		$uploads   = wp_upload_dir( null, false );
 		$found     = array();
 		foreach ( $ctx->posts() as $post ) {
-			$p = new WP_HTML_Tag_Processor( $post->post_content );
+			$p = new WP_HTML_Tag_Processor( Plakette_Breakdance::content_for( $post ) );
 			while ( $p->next_tag( 'a' ) ) {
 				$href = trim( (string) $p->get_attribute( 'href' ) );
 				if ( '' === $href || '#' === $href[0] || preg_match( '#^(mailto|tel|javascript|data):#i', $href ) ) {
@@ -624,6 +748,41 @@ class Plakette_Check_Broken_Links extends Plakette_Check {
 		return $id ? get_permalink( (int) $id ) : '';
 	}
 
+	/** Replaces dead addresses (md5 of href => new address) in HTML; '' removes the link and keeps its text. */
+	public static function rewrite_links( $html, array $targets, &$done ) {
+		// 1) Replace addresses.
+		$p = new WP_HTML_Tag_Processor( $html );
+		while ( $p->next_tag( 'a' ) ) {
+			$href = trim( (string) $p->get_attribute( 'href' ) );
+			$key  = md5( $href );
+			if ( isset( $targets[ $key ] ) && '' !== $targets[ $key ] ) {
+				$p->set_attribute( 'href', $targets[ $key ] );
+				++$done;
+			}
+		}
+		$html = $p->get_updated_html();
+		// 2) Remove links where no new address was given (keep the text).
+		$html = preg_replace_callback(
+			'#<a\b([^>]*)>(.*?)</a>#is',
+			function ( $m ) use ( $targets, &$done ) {
+				if ( ! preg_match( '/\shref\s*=\s*(["\'])(.*?)\1/is', $m[1], $h ) ) {
+					return $m[0];
+				}
+				$key = md5( trim( html_entity_decode( $h[2], ENT_QUOTES ) ) );
+				if ( ! isset( $targets[ $key ] ) ) {
+					$key = md5( trim( $h[2] ) );
+				}
+				if ( isset( $targets[ $key ] ) && '' === $targets[ $key ] ) {
+					++$done;
+					return $m[2];
+				}
+				return $m[0];
+			},
+			$html
+		);
+		return $html;
+	}
+
 	public function fix( array $req, array &$undo ) {
 		$by_post = array();
 		foreach ( (array) ( isset( $req['items'] ) ? $req['items'] : array() ) as $item ) {
@@ -631,49 +790,58 @@ class Plakette_Check_Broken_Links extends Plakette_Check {
 				$by_post[ (int) $m[1] ][ $m[2] ] = esc_url_raw( trim( isset( $item['value'] ) ? (string) $item['value'] : '' ) );
 			}
 		}
-		$done = 0;
+		$done    = 0;
+		$skipped = 0;
 		foreach ( $by_post as $post_id => $targets ) {
 			$post = get_post( $post_id );
 			if ( ! $post || ! current_user_can( 'edit_post', $post_id ) ) {
 				continue;
 			}
-			$html = $post->post_content;
-			// 1) Replace addresses.
-			$p = new WP_HTML_Tag_Processor( $html );
-			while ( $p->next_tag( 'a' ) ) {
-				$href = trim( (string) $p->get_attribute( 'href' ) );
-				$key  = md5( $href );
-				if ( isset( $targets[ $key ] ) && '' !== $targets[ $key ] ) {
-					$p->set_attribute( 'href', $targets[ $key ] );
-					++$done;
-				}
+			if ( Plakette_Breakdance::builds( $post_id ) ) {
+				// Breakdance: link fields of buttons/text links and links inside rich text.
+				Plakette_Breakdance::visit(
+					$post_id,
+					function ( $node ) use ( $targets, &$done, &$skipped ) {
+						$changes = 0;
+						Plakette_Breakdance::map_strings(
+							Plakette_Breakdance::content_of( $node ),
+							function ( $str, $key ) use ( $targets, &$done, &$changes, &$skipped ) {
+								$k = md5( trim( $str ) );
+								if ( ( 'url' === $key || false !== stripos( $key, 'url' ) ) && isset( $targets[ $k ] ) ) {
+									if ( '' === $targets[ $k ] ) {
+										++$skipped; // A button needs an address – removing it would break the element.
+										return $str;
+									}
+									++$done;
+									++$changes;
+									return $targets[ $k ];
+								}
+								if ( false === stripos( $str, '<a' ) ) {
+									return $str;
+								}
+								$new = self::rewrite_links( $str, $targets, $done );
+								if ( $new !== $str ) {
+									++$changes;
+								}
+								return $new;
+							}
+						);
+						return $changes;
+					},
+					$undo
+				);
 			}
-			$html = $p->get_updated_html();
-			// 2) Remove links where no new address was given (keep the text).
-			$html = preg_replace_callback(
-				'#<a\b([^>]*)>(.*?)</a>#is',
-				function ( $m ) use ( $targets, &$done ) {
-					if ( ! preg_match( '/\shref\s*=\s*(["\'])(.*?)\1/is', $m[1], $h ) ) {
-						return $m[0];
-					}
-					$key = md5( trim( html_entity_decode( $h[2], ENT_QUOTES ) ) );
-					if ( ! isset( $targets[ $key ] ) ) {
-						$key = md5( trim( $h[2] ) );
-					}
-					if ( isset( $targets[ $key ] ) && '' === $targets[ $key ] ) {
-						++$done;
-						return $m[2];
-					}
-					return $m[0];
-				},
-				$html
-			);
+			$html = self::rewrite_links( $post->post_content, $targets, $done );
 			if ( $html !== $post->post_content ) {
 				$undo[] = array( 'post_field', $post_id, 'post_content', $post->post_content );
 				wp_update_post( wp_slash( array( 'ID' => $post_id, 'post_content' => $html ) ) );
 			}
 		}
-		return sprintf( _n( '%d Link korrigiert.', '%d Links korrigiert.', $done, 'plakette' ), $done );
+		$msg = sprintf( _n( '%d Link korrigiert.', '%d Links korrigiert.', $done, 'plakette' ), $done );
+		if ( $skipped ) {
+			$msg .= ' ' . sprintf( _n( '%d Button braucht eine Adresse und wurde nicht verändert – trag im Feld eine neue Adresse ein oder entferne den Button in Breakdance.', '%d Buttons brauchen eine Adresse und wurden nicht verändert – trag im Feld eine neue Adresse ein oder entferne die Buttons in Breakdance.', $skipped, 'plakette' ), $skipped );
+		}
+		return $msg;
 	}
 }
 

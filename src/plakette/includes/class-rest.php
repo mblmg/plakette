@@ -122,7 +122,7 @@ class Plakette_Rest {
 		$seen = array();
 		foreach ( array_slice( (array) ( $p['cookies'] ?? array() ), 0, 200 ) as $c ) {
 			$n = $name( $c['name'] ?? '' );
-			if ( '' !== $n && ! isset( $seen[ 'c' . $n ] ) ) {
+			if ( '' !== $n && ! isset( $seen[ 'c' . $n ] ) && ! Plakette_Services::is_extension_storage( $n ) ) {
 				$seen[ 'c' . $n ]  = true;
 				$data['cookies'][] = array( 'name' => $n, 'page' => $page( $c['page'] ?? '' ) );
 			}
@@ -130,7 +130,7 @@ class Plakette_Rest {
 		foreach ( array_slice( (array) ( $p['storage'] ?? array() ), 0, 200 ) as $st ) {
 			$area = in_array( $st['area'] ?? '', array( 'local', 'session', 'idb' ), true ) ? $st['area'] : 'local';
 			$k    = $name( $st['key'] ?? '' );
-			if ( '' !== $k && ! isset( $seen[ $area . $k ] ) ) {
+			if ( '' !== $k && ! isset( $seen[ $area . $k ] ) && ! Plakette_Services::is_extension_storage( $k ) ) {
 				$seen[ $area . $k ] = true;
 				$data['storage'][]  = array( 'area' => $area, 'key' => $k, 'page' => $page( $st['page'] ?? '' ) );
 			}

@@ -235,7 +235,7 @@ class Plakette_Legal_Pages {
 	public static function content_services( array $posts ) {
 		$found = array();
 		foreach ( $posts as $post ) {
-			$content = (string) $post->post_content;
+			$content = Plakette_Breakdance::scan_source( $post );
 			if ( false === strpos( $content, '://' ) ) {
 				continue;
 			}
@@ -339,7 +339,7 @@ class Plakette_Legal_Pages {
 			$rendered = apply_filters( 'the_content', $post->post_content ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals
 			$echoed   = ob_get_clean();
 			wp_reset_postdata();
-			$html = $echoed . ' ' . $rendered;
+			$html = $echoed . ' ' . $rendered . ' ' . Plakette_Breakdance::scan_source( $post );
 		}
 		$extra = '';
 		if ( preg_match_all( '#mailto:([^"\'?\s>]+)#i', $html, $mm ) ) {
@@ -356,7 +356,7 @@ class Plakette_Legal_Pages {
 				$extra .= ' ' . $mail;
 			}
 		}
-		$cache[ $post_id ] = array( self::plain_text( $html ) . ' ' . $extra . ' ' . self::plain_text( $post->post_content ), $front );
+		$cache[ $post_id ] = array( self::plain_text( $html ) . ' ' . $extra . ' ' . self::plain_text( Plakette_Breakdance::content_for( $post ) ), $front );
 		return $cache[ $post_id ];
 	}
 
@@ -585,7 +585,7 @@ class Plakette_Legal_Pages {
 	public static function content_posts() {
 		return get_posts(
 			array(
-				'post_type'              => array( 'page', 'wp_template_part', 'wp_template', 'wp_block' ),
+				'post_type'              => array_merge( array( 'page', 'wp_template_part', 'wp_template', 'wp_block' ), Plakette_Breakdance::part_types() ),
 				'post_status'            => 'publish',
 				'posts_per_page'         => 500,
 				'no_found_rows'          => true,
@@ -884,9 +884,14 @@ class Plakette_Check_Legal_Privacy_Coverage extends Plakette_Check {
 			}
 		}
 		if ( $items ) {
+			$extra = array( 'items' => $items );
+			if ( Plakette_Breakdance::builds( $page ) ) {
+				$extra['notes']   = array( sprintf( __( 'Es fehlen: %s', 'plakette' ), implode( ', ', wp_list_pluck( $items, 'label' ) ) ) );
+				$extra['blocked'] = __( 'Deine Datenschutzerklärung ist mit Breakdance gestaltet. Dort kann Plakette keine Abschnitte einfügen, ohne dein Layout zu verändern. Ergänze die genannten Dienste im Breakdance-Editor (je Dienst: Anbieter, Zweck, Rechtsgrundlage).', 'plakette' );
+			}
 			return $this->fail(
 				sprintf( _n( '%d Dienst fehlt in der Datenschutzerklärung.', '%d Dienste fehlen in der Datenschutzerklärung.', count( $items ), 'plakette' ), count( $items ) ),
-				array( 'items' => $items )
+				$extra
 			);
 		}
 		return $this->pass(
@@ -996,6 +1001,8 @@ class Plakette_Check_Legal_Odr extends Plakette_Check {
 		foreach ( Plakette_Legal_Pages::content_posts() as $post ) {
 			if ( false !== stripos( $post->post_content, 'ec.europa.eu/consumers/odr' ) && Plakette_Legal_Pages::remove_odr( $post->post_content ) !== $post->post_content ) {
 				$items[] = Plakette_Legal_Pages::item( $post, __( 'verlinkt ec.europa.eu/consumers/odr', 'plakette' ) );
+			} elseif ( Plakette_Breakdance::builds( $post->ID ) && Plakette_Breakdance::transform( $post->ID, array( __CLASS__, 'bd_remove' ) ) ) {
+				$items[] = Plakette_Legal_Pages::item( $post, __( 'verlinkt ec.europa.eu/consumers/odr (Breakdance)', 'plakette' ) );
 			}
 		}
 		if ( $items ) {
@@ -1015,11 +1022,20 @@ class Plakette_Check_Legal_Odr extends Plakette_Check {
 		return $this->pass( __( 'Kein Link auf die abgeschaltete OS-Plattform gefunden.', 'plakette' ) );
 	}
 
+	/** Breakdance string: remove the ODR paragraph/link from HTML (link fields of buttons stay – they need a manual change). */
+	public static function bd_remove( $str ) {
+		return false !== stripos( $str, 'ec.europa.eu/consumers/odr' ) && false !== strpos( $str, '<' ) ? Plakette_Legal_Pages::remove_odr( $str ) : $str;
+	}
+
 	public function fix( array $req, array &$undo ) {
 		$done = 0;
 		foreach ( (array) $req['items'] as $item ) {
 			$post = get_post( isset( $item['id'] ) ? (int) $item['id'] : 0 );
 			if ( ! $post ) {
+				continue;
+			}
+			if ( Plakette_Breakdance::builds( $post->ID ) && Plakette_Breakdance::transform( $post->ID, array( __CLASS__, 'bd_remove' ), $undo ) ) {
+				++$done;
 				continue;
 			}
 			$new = Plakette_Legal_Pages::remove_odr( $post->post_content );
@@ -1051,6 +1067,21 @@ class Plakette_Check_Legal_Outdated_Law extends Plakette_Check {
 	public function run( Plakette_Context $ctx ) {
 		$items = array();
 		foreach ( Plakette_Legal_Pages::content_posts() as $post ) {
+			if ( Plakette_Breakdance::builds( $post->ID ) ) {
+				$found = array();
+				Plakette_Breakdance::transform(
+					$post->ID,
+					function ( $str ) use ( &$found ) {
+						list( $f, $new ) = Plakette_Legal_Pages::modernise( $str );
+						$found           = array_merge( $found, (array) $f );
+						return $new;
+					}
+				);
+				if ( $found ) {
+					$items[] = Plakette_Legal_Pages::item( $post, implode( ', ', array_slice( array_unique( $found ), 0, 4 ) ) . ' (Breakdance)' );
+					continue;
+				}
+			}
 			if ( ! preg_match( '/TMG|RStV|TTDSG|Telemediengesetz|Rundfunkstaatsvertrag|Telekommunikation-Telemedien/u', $post->post_content ) ) {
 				continue;
 			}
@@ -1070,6 +1101,16 @@ class Plakette_Check_Legal_Outdated_Law extends Plakette_Check {
 		foreach ( (array) $req['items'] as $item ) {
 			$post = get_post( isset( $item['id'] ) ? (int) $item['id'] : 0 );
 			if ( ! $post ) {
+				continue;
+			}
+			if ( Plakette_Breakdance::builds( $post->ID ) && Plakette_Breakdance::transform(
+				$post->ID,
+				function ( $str ) {
+					return Plakette_Legal_Pages::modernise( $str )[1];
+				},
+				$undo
+			) ) {
+				++$done;
 				continue;
 			}
 			list( $found, $new ) = Plakette_Legal_Pages::modernise( $post->post_content );

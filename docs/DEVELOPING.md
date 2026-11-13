@@ -100,6 +100,24 @@ fehlen“) prüft, dass es sie gibt und dass sie wirken – der Test muss „kei
 | `class-vulns.php`, `checks-vulns.php`, `modules/vulns-boot.php`, `class-dashboard.php` | security_vulnerabilities (Abgleich mit WPVulnerability/CVE), Dashboard-Widget, Admin-Hinweis | – (Einstellungen „vulns“, „dashboard“) |
 | `checks-seo-helper.php`, `modules/seo-helper.php`, `modules/breakdance.php` | seo_company_schema, seo_image_sitemap, seo_featured_images, legacy_imm_plugins | company_schema, image_sitemap (+ Einstellungen „breakdance“) |
 
+- Breakdance-Inhalte: `Plakette_Breakdance::html( $id )` baut aus dem Elementbaum (`_breakdance_data`) einfaches HTML,
+  `::content_for( $post )` liefert es statt des (leeren) Beitragsinhalts – für Wortzählungen u. Ä. immer das nehmen.
+  Dieselbe HTML geht im Beitragseditor an Yoast SEO (`registerModification('content')`) und Rank Math (`rank_math_content`)
+  sowie als `wordCount` ins Yoast-Article-Schema (Einstellung „breakdance › seo_bridge“, Standard an).
+  **Jede Prüfung, die Beitragsinhalte liest oder ändert, muss Breakdance mitdenken:** lesen mit `content_for()` (Text/HTML)
+  bzw. `scan_source()` (roh, mit iframes, VG-Wort-Pixeln und Video-/Karten-Adressen), ändern mit `Plakette_Breakdance::visit()`
+  / `::transform()` (Baum als Objekte, `{}` bleibt `{}`, speichert rückgängig machbar über `Plakette_Log::set_postmeta`).
+  Bilder im Baum: `map_images()` (Bild = `{url, id|filename|mime}`, z. B. `content.controls.image` bei ImageWithZoom).
+  Breakdance-Header/-Footer/-Vorlagen/-Blöcke: `Plakette_Breakdance::part_types()` (in `Plakette_Legal_Pages::content_posts()`).
+  `Plakette_Log::set_postmeta()` und das Rückgängig-Op `postmeta` schreiben mit `wp_slash()` (sonst zerbricht JSON).
+- Browser-Erweiterungen (Dark Reader, Passwortmanager, Grammarly …) schreiben bei der Datenschutz-Messung eigene Cookies/Speicher:
+  `Plakette_Services::is_extension_storage()` (Filter `plakette_extension_storage`) blendet sie aus.
+- Google-Unternehmensprofil: `modules/google-profile.php` (`Plakette_Google_Profile`: Kurzlink auflösen → Places API
+  `places:searchText` → Place ID in Option `plakette_gbp_place`; Details 12 h im Transient), Prüfung `seo_google_profile`
+  in `checks-seo-helper.php`. Felder: `company.gbp_url`, `google.places_key` (Feldtyp `password`). Nur lesen, nie schreiben.
+- Sicherungen: Hoster können `define( 'PLAKETTE_BACKUPS', 'Name' )` setzen (oder Filter `plakette_host_backups`) – dann gilt
+  security_backups als erfüllt. Sonst kann der Nutzer „Server sichert – als erfüllt markieren“ (Option `plakette_backups_confirmed`, rückgängig im Protokoll).
+
 - Datenschutz-Messung im Browser (admin.js › privacyProbe) → REST `/privacy-probe` → Option `plakette_privacy_probe`; Wissensbasis Cookies/Speicher: `Plakette_Services::storage_kb()`, Plugins je Dienst: `::plugins()`. Externer Prüfer: `node tests/consent-probe.mjs judge [--php 8.4] [--ui]`.
 - Cookie-Banner erscheint nur auf Seiten, die etwas zurückhalten; sonst liegt er als `<template>` bereit (Link „Cookie-Einstellungen“ lädt ihn nach).
 - Cookie-Einstellungen wieder öffnen: `[plakette_cookie_settings]`, `a[href="#plakette-consent"]` oder `[data-plakette-consent-open]`.

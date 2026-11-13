@@ -1024,18 +1024,56 @@ class Plakette_Check_Sec_Backups extends Plakette_Security_Check {
 	public $problem   = 'Keine Sicherung (Backup) erkennbar';
 	public $explain   = 'Eine Sicherung ist deine Rettung nach einem Hack, einem missglückten Update oder einem Serverschaden. Bewährt ist die 3-2-1-Regel: 3 Kopien deiner Daten, auf 2 verschiedenen Speichern, 1 davon außer Haus (nicht auf demselben Server). Frag deinen Hoster, was er sichert – oder nutze ein Backup-Plugin wie UpdraftPlus mit Ablage in einer Cloud.';
 	public $fix_label = 'Nachricht an den Hoster';
-	public $fix_does  = 'Plakette hat eine Nachricht vorbereitet, in der du deinen Hoster nach täglichen Sicherungen fragst. Bietet er keine an, installiere ein Backup-Plugin (z. B. UpdraftPlus) und speichere die Sicherungen in einer Cloud.';
+	public $fix_does  = 'Plakette hat eine Nachricht vorbereitet, in der du deinen Hoster nach täglichen Sicherungen fragst. Bietet er keine an, installiere ein Backup-Plugin (z. B. UpdraftPlus) und speichere die Sicherungen in einer Cloud. Weißt du sicher, dass dein Server die Website sichert, markiere den Punkt als erfüllt.';
 	public $kind      = 'letter';
+	public $risk      = 'review';
+
+	/** Option: time the site owner confirmed that the server makes backups. */
+	const CONFIRMED = 'plakette_backups_confirmed';
+
+	/** Hosting of i-make.media – every site there is backed up automatically. */
+	const IMM_URL = 'https://i-make.media/';
+
+	/**
+	 * Backups the host declares: constant PLAKETTE_BACKUPS (name of the provider, e.g. in wp-config.php of a
+	 * managed server) or the filter plakette_host_backups.
+	 */
+	public static function host_backups() {
+		$name = defined( 'PLAKETTE_BACKUPS' ) && is_string( PLAKETTE_BACKUPS ) ? PLAKETTE_BACKUPS : '';
+		return trim( (string) apply_filters( 'plakette_host_backups', $name ) );
+	}
 
 	public function run( Plakette_Context $ctx ) {
+		$host = self::host_backups();
+		if ( '' !== $host ) {
+			return $this->pass( sprintf( __( 'Dein Hosting bei %s sichert die Website automatisch.', 'plakette' ), $host ) );
+		}
 		$found = Plakette_Security::backup_solution();
 		if ( $found ) {
 			return $this->pass( sprintf( __( 'Sicherungen über %s erkannt. Probiere ab und zu aus, ob sich eine Sicherung auch zurückspielen lässt.', 'plakette' ), $found ) );
 		}
+		$confirmed = (int) get_option( self::CONFIRMED, 0 );
+		if ( $confirmed ) {
+			return $this->pass(
+				sprintf( __( 'Du hast am %s bestätigt, dass der Server die Website sichert.', 'plakette' ), wp_date( get_option( 'date_format' ), $confirmed ) ),
+				array( 'notes' => array( __( 'Stimmt das nicht mehr, nimm die Bestätigung im Protokoll zurück.', 'plakette' ) ) )
+			);
+		}
 		return $this->warn(
 			__( 'Plakette findet kein Backup-Plugin. Vielleicht sichert dein Hoster die Website – frag am besten nach.', 'plakette' ),
-			array( 'letter' => $this->letter( __( "Bitte teilen Sie mir mit, ob und wie meine Website gesichert wird:\n- Werden Dateien UND Datenbank täglich gesichert?\n- Wie lange werden die Sicherungen aufbewahrt (ich wünsche mindestens 14 Tage)?\n- Liegen die Sicherungen auf einem anderen Server bzw. an einem anderen Standort?\n- Kann ich eine Sicherung selbst zurückspielen (z. B. im Kundenmenü), und was kostet eine Wiederherstellung?\n\nFalls es keine tägliche Sicherung gibt, bitte ich um ein Angebot dafür.", 'plakette' ) ) )
+			array(
+				'letter'        => $this->letter( __( "Bitte teilen Sie mir mit, ob und wie meine Website gesichert wird:\n- Werden Dateien UND Datenbank täglich gesichert?\n- Wie lange werden die Sicherungen aufbewahrt (ich wünsche mindestens 14 Tage)?\n- Liegen die Sicherungen auf einem anderen Server bzw. an einem anderen Standort?\n- Kann ich eine Sicherung selbst zurückspielen (z. B. im Kundenmenü), und was kostet eine Wiederherstellung?\n\nFalls es keine tägliche Sicherung gibt, bitte ich um ein Angebot dafür.", 'plakette' ) ),
+				'confirm_label' => __( 'Server sichert – als erfüllt markieren', 'plakette' ),
+				'notes'         => array( __( 'Tipp: Websites, die bei i-make.media gehostet sind, werden automatisch gesichert – darum musst du dich dort nicht kümmern.', 'plakette' ) ),
+				'links'         => array( array( 'label' => __( 'Hosting mit Sicherung bei i-make.media', 'plakette' ), 'url' => self::IMM_URL ) ),
+			)
 		);
+	}
+
+	/** "Mark as fulfilled": the owner knows that the server backs the site up. Undo in the protocol. */
+	public function fix( array $req, array &$undo ) {
+		Plakette_Log::set_option( self::CONFIRMED, time(), $undo, false );
+		return __( 'Als erfüllt markiert: Der Server sichert die Website.', 'plakette' );
 	}
 }
 

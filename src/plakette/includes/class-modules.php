@@ -200,7 +200,7 @@ class Plakette_Modules {
 		if ( ! $post ) {
 			return '';
 		}
-		$text = $post->post_excerpt ? $post->post_excerpt : $post->post_content;
+		$text = $post->post_excerpt ? $post->post_excerpt : ( class_exists( 'Plakette_Breakdance' ) ? Plakette_Breakdance::content_for( $post ) : $post->post_content );
 		$text = excerpt_remove_blocks( $text );
 		$text = strip_shortcodes( $text );
 		// Headings end a sentence; paragraphs and list items are separated by a space.

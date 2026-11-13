@@ -154,6 +154,138 @@ class Plakette_Check_Company_Schema extends Plakette_Check {
 	}
 }
 
+class Plakette_Check_Google_Profile extends Plakette_Check {
+	public $id        = 'seo_google_profile';
+	public $area      = 'seo';
+	public $group     = 'Strukturierte Daten';
+	public $weight    = 4;
+	public $title     = 'Firmendaten stimmen mit dem Google-Unternehmensprofil überein';
+	public $problem   = 'Firmendaten weichen vom Google-Unternehmensprofil ab';
+	public $explain   = 'Google vergleicht Name, Adresse und Telefon auf deiner Website mit deinem Unternehmensprofil (Eintrag in Google Maps). Stimmen sie überein, vertraut Google den Angaben mehr – das hilft bei Suchen in deiner Gegend. Widersprüche (z. B. eine alte Telefonnummer) verwirren Google und Kunden.';
+	public $fix_label = 'Google-Angaben übernehmen';
+	public $fix_does  = 'Übernimmt die ausgewählten Angaben aus deinem Google-Unternehmensprofil in die Firmendaten von Plakette. Damit ändern sich Firmenprofil für Google, Impressum-Angaben aus den Firmendaten und alles, was Plakette daraus erzeugt. An deinem Profil bei Google ändert sich nichts.';
+	public $risk      = 'review';
+	public $kind      = 'items';
+
+	public function run( Plakette_Context $ctx ) {
+		$url = Plakette_Google_Profile::url();
+		$key = Plakette_Google_Profile::key();
+		if ( '' === $url ) {
+			$form = Plakette_Settings::form( 'company', array( 'gbp_url' ) );
+			$keyf = Plakette_Settings::form( 'google', array( 'places_key' ) );
+			return $this->warn(
+				__( 'Dein Google-Unternehmensprofil ist nicht mit der Website verknüpft.', 'plakette' ),
+				array(
+					'weight'    => 2,
+					'problem'   => __( 'Google-Unternehmensprofil nicht verknüpft', 'plakette' ),
+					'kind'      => 'form',
+					'fix_label' => __( 'Profil verknüpfen', 'plakette' ),
+					'fix_does'  => __( 'Nimmt den Link zu deinem Unternehmensprofil in die strukturierten Daten auf (sameAs/hasMap), damit Google Website und Profil sicher zusammenbringt. Mit API-Schlüssel gleicht Plakette danach Name, Adresse, Telefon und Öffnungszeiten ab. Hast du kein Unternehmensprofil, kannst du diesen Punkt ignorieren.', 'plakette' ),
+					'form'      => array(
+						'section' => 'company',
+						'fields'  => array_merge( $form['fields'], $keyf['fields'] ),
+						'intro'   => __( 'Den Link findest du in Google Maps: dein Unternehmen öffnen › „Teilen“ › „Link kopieren“. Der API-Schlüssel ist freiwillig.', 'plakette' ),
+					),
+				)
+			);
+		}
+		if ( ! Plakette_Google_Profile::is_profile_url( $url ) ) {
+			return $this->warn(
+				sprintf( __( 'Der eingetragene Link „%s“ führt nicht zu Google Maps.', 'plakette' ), $url ),
+				array( 'kind' => 'none', 'blocked' => __( 'Trag unter Einstellungen › Firmendaten den Link aus Google Maps ein (Unternehmen öffnen › „Teilen“ › „Link kopieren“) oder die Place ID (beginnt mit „ChIJ“).', 'plakette' ) )
+			);
+		}
+		if ( '' === $key ) {
+			return $this->skip( __( 'Das Unternehmensprofil ist verknüpft. Für den Abgleich der Angaben trag unter Einstellungen › Google-Unternehmensprofil einen API-Schlüssel ein.', 'plakette' ) );
+		}
+		$place = Plakette_Google_Profile::details();
+		if ( is_wp_error( $place ) ) {
+			return $this->skip( __( 'Abgleich mit Google nicht möglich.', 'plakette' ), array( 'notes' => array( $place->get_error_message() ) ) );
+		}
+		$google = Plakette_Google_Profile::as_company( $place );
+		$ours   = Plakette_Settings::company();
+		$diffs  = Plakette_Google_Profile::differences( $google, $ours );
+		$notes  = array( sprintf( __( 'Abgefragt: Google-Profil „%1$s“, %2$s (Place ID %3$s).', 'plakette' ), $google['name'], (string) ( $place['formattedAddress'] ?? '' ), (string) ( $place['id'] ?? '' ) ) );
+		$links  = ! empty( $place['googleMapsUri'] ) ? array( array( 'label' => __( 'Profil in Google Maps', 'plakette' ), 'url' => (string) $place['googleMapsUri'] ) ) : array();
+		if ( ! empty( $place['businessStatus'] ) && 'OPERATIONAL' !== $place['businessStatus'] ) {
+			$notes[] = sprintf( __( 'Achtung: Google führt das Unternehmen als „%s“ (vorübergehend oder dauerhaft geschlossen).', 'plakette' ), $place['businessStatus'] );
+		}
+		if ( ! empty( $place['websiteUri'] ) ) {
+			$host = strtolower( preg_replace( '/^www\./', '', (string) wp_parse_url( (string) $place['websiteUri'], PHP_URL_HOST ) ) );
+			$own  = strtolower( preg_replace( '/^www\./', '', (string) wp_parse_url( home_url(), PHP_URL_HOST ) ) );
+			if ( $host && $host !== $own ) {
+				$notes[] = sprintf( __( 'Im Google-Profil steht als Website %1$s, diese Website ist %2$s. Das änderst du im Unternehmensprofil bei Google.', 'plakette' ), $place['websiteUri'], home_url() );
+			}
+		} else {
+			$notes[] = __( 'Im Google-Profil ist keine Website eingetragen – ergänze sie dort.', 'plakette' );
+		}
+		if ( ! $diffs ) {
+			return $this->pass( __( 'Name, Adresse, Telefon und Öffnungszeiten stimmen mit dem Google-Unternehmensprofil überein.', 'plakette' ), array( 'notes' => $notes, 'links' => $links ) );
+		}
+		// Only the name differs: usual (legal name in the imprint, brand at Google) – no defect.
+		if ( array( 'name' ) === wp_list_pluck( $diffs, 'key' ) ) {
+			$notes[] = sprintf( __( 'Der Name weicht ab (Website: „%1$s“, Google: „%2$s“). Das ist in Ordnung, wenn in den Firmendaten der Name fürs Impressum steht.', 'plakette' ), $diffs[0]['ours'], $diffs[0]['google'] );
+			return $this->pass( __( 'Adresse, Telefon und Öffnungszeiten stimmen mit dem Google-Unternehmensprofil überein.', 'plakette' ), array( 'notes' => $notes, 'links' => $links ) );
+		}
+		$items = array();
+		foreach ( $diffs as $d ) {
+			$items[] = array(
+				'id'      => 'gbp:' . $d['key'],
+				'label'   => $d['label'],
+				'sub'     => sprintf( __( 'Website: %1$s · Google: %2$s', 'plakette' ), '' !== $d['ours'] ? str_replace( "\n", ' / ', $d['ours'] ) : __( '(leer)', 'plakette' ), str_replace( "\n", ' / ', $d['google'] ) ),
+				'value'   => $d['google'],
+				'checked' => $d['checked'],
+			);
+		}
+		if ( in_array( 'name', wp_list_pluck( $diffs, 'key' ), true ) ) {
+			$notes[] = __( 'Der Name ist nicht vorausgewählt: In den Firmendaten steht der Name fürs Impressum (z. B. mit Rechtsform). Weicht nur die Schreibweise ab, passe besser das Google-Profil an.', 'plakette' );
+		}
+		return $this->warn(
+			sprintf( _n( '%d Angabe weicht vom Google-Unternehmensprofil ab.', '%d Angaben weichen vom Google-Unternehmensprofil ab.', count( $items ), 'plakette' ), count( $items ) ),
+			array( 'items' => $items, 'notes' => $notes, 'links' => $links )
+		);
+	}
+
+	public function fix( array $req, array &$undo ) {
+		// Form (link + optional key) …
+		if ( isset( $req['value'] ) && is_array( $req['value'] ) ) {
+			$url = trim( (string) ( $req['value']['gbp_url'] ?? '' ) );
+			if ( '' === $url || ! Plakette_Google_Profile::is_profile_url( $url ) ) {
+				return new WP_Error( 'plakette_gbp', __( 'Bitte trag den Link aus Google Maps ein (Unternehmen öffnen › „Teilen“ › „Link kopieren“).', 'plakette' ) );
+			}
+			Plakette_Settings::save( 'company', array( 'gbp_url' => $url ), $undo );
+			if ( '' !== trim( (string) ( $req['value']['places_key'] ?? '' ) ) ) {
+				Plakette_Settings::save( 'google', array( 'places_key' => $req['value']['places_key'] ), $undo );
+			}
+			Plakette_Google_Profile::forget();
+			if ( ! Plakette_Modules::on( 'company_schema' ) ) {
+				Plakette_Log::set_module( 'company_schema', true, $undo );
+			}
+			return __( 'Das Google-Unternehmensprofil ist verknüpft.', 'plakette' );
+		}
+		// … or take over the Google values.
+		$place = Plakette_Google_Profile::details();
+		if ( is_wp_error( $place ) ) {
+			return $place;
+		}
+		$google = Plakette_Google_Profile::as_company( $place );
+		$values = array();
+		foreach ( (array) ( $req['items'] ?? array() ) as $item ) {
+			if ( preg_match( '/^gbp:(name|street|zip|city|phone|opening_hours)$/', (string) ( $item['id'] ?? '' ), $m ) && '' !== $google[ $m[1] ] ) {
+				$values[ $m[1] ] = $google[ $m[1] ];
+			}
+		}
+		if ( ! $values ) {
+			return new WP_Error( 'plakette_gbp', __( 'Bitte wähle mindestens eine Angabe aus.', 'plakette' ) );
+		}
+		if ( isset( $values['street'] ) && '' !== $google['country'] ) {
+			$values['country'] = $google['country'];
+		}
+		Plakette_Settings::save( 'company', $values, $undo );
+		return sprintf( _n( '%d Angabe aus Google übernommen.', '%d Angaben aus Google übernommen.', count( $values ), 'plakette' ), count( $values ) );
+	}
+}
+
 class Plakette_Check_Image_Sitemap extends Plakette_Check {
 	public $id        = 'seo_image_sitemap';
 	public $area      = 'seo';
@@ -286,6 +418,7 @@ add_filter(
 			array(
 				'Plakette_Check_Legacy_Imm',
 				'Plakette_Check_Company_Schema',
+				'Plakette_Check_Google_Profile',
 				'Plakette_Check_Image_Sitemap',
 				'Plakette_Check_Featured_Images',
 			)

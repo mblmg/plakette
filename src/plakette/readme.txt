@@ -5,7 +5,7 @@ Plugin URI: https://github.com/mblmg/plakette
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 
 Die Hauptuntersuchung für deine Website: Rechtliches (Impressum, Datenschutz/DSGVO, Cookie-Banner, Barrierefreiheit), Sicherheit, Geschwindigkeit und SEO – jeden Mangel mit einem Klick beheben, jederzeit rückgängig.

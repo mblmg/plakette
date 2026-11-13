@@ -429,7 +429,7 @@
 
 		const disabled = ui.busy ? 'disabled' : '';
 		if ( k === 'letter' ) {
-			return html + `<div class="plk-letter"><label for="plk-letter-${ esc( c.id ) }">Nachricht an deinen Hoster</label><textarea id="plk-letter-${ esc( c.id ) }" readonly rows="11">${ esc( c.letter || '' ) }</textarea><button class="plk-btn is-primary" data-action="copy" data-id="${ esc( c.id ) }">Nachricht kopieren</button></div>`;
+			return html + `<div class="plk-letter"><label for="plk-letter-${ esc( c.id ) }">Nachricht an deinen Hoster</label><textarea id="plk-letter-${ esc( c.id ) }" readonly rows="11">${ esc( c.letter || '' ) }</textarea><button class="plk-btn is-primary" data-action="copy" data-id="${ esc( c.id ) }">Nachricht kopieren</button>${ c.confirm_label ? ` <button class="plk-btn" data-action="fix" data-id="${ esc( c.id ) }" ${ disabled }>${ esc( c.confirm_label ) }</button>` : '' }</div>`;
 		}
 		if ( k === 'input' && c.input ) {
 			const d = draft( c );
@@ -520,8 +520,8 @@
 			const opts = Object.keys( f.options || {} ).map( ( o ) => `<option value="${ esc( o ) }" ${ String( v ) === o ? 'selected' : '' }>${ esc( f.options[ o ] ) }</option>` ).join( '' );
 			input = `<select ${ attrs }${ described }>${ opts }</select>`;
 		} else {
-			const t = [ 'email', 'url', 'tel', 'number' ].indexOf( type ) >= 0 ? type : 'text';
-			input = `<input type="${ t }" ${ attrs } value="${ esc( v ) }"${ ph }${ described }${ f.required ? ' required' : '' }>`;
+			const t = [ 'email', 'url', 'tel', 'number', 'password' ].indexOf( type ) >= 0 ? type : 'text';
+			input = `<input type="${ t }" ${ attrs } value="${ esc( v ) }"${ ph }${ described }${ f.required ? ' required' : '' }${ t === 'password' ? ' autocomplete="off" spellcheck="false"' : '' }>`;
 		}
 		return `<div class="plk-field is-${ esc( type ) }">${ label }${ input }${ help }</div>`;
 	}

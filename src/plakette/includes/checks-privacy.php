@@ -69,7 +69,7 @@ abstract class Plakette_Privacy_Check extends Plakette_Check {
 	public static function media_in_posts( Plakette_Context $ctx ) {
 		$out = array();
 		foreach ( $ctx->posts() as $post ) {
-			$c = (string) $post->post_content;
+			$c = Plakette_Breakdance::scan_source( $post );
 			if ( '' === $c || ( false === stripos( $c, 'iframe' ) && false === strpos( $c, '://' ) ) ) {
 				continue;
 			}
@@ -444,7 +444,7 @@ class Plakette_Privacy_Evidence {
 		}
 		// VG Wort pixels are usually inserted per post – scan the content, not only the crawled pages.
 		foreach ( $ctx->posts() as $post ) {
-			if ( false !== stripos( (string) $post->post_content, '.met.vgwort.de/' ) ) {
+			if ( false !== stripos( Plakette_Breakdance::scan_source( $post ), '.met.vgwort.de/' ) ) {
 				$e['disputed']['vg-wort'][] = Plakette_Privacy_Check::page_label( $post->ID );
 			}
 		}
@@ -504,6 +504,10 @@ class Plakette_Privacy_Evidence {
 			}
 		}
 		foreach ( $names as $n ) {
+			// Written by a browser extension of the person measuring (e.g. Dark Reader), not by the website.
+			if ( Plakette_Services::is_extension_storage( $n[1] ) ) {
+				continue;
+			}
 			$kb             = Plakette_Services::classify_storage( $n[1] );
 			$e['entries'][] = array( 'type' => $n[0], 'name' => $n[1], 'src' => $n[2], 'kb' => $kb, 'page' => $n[3] );
 			// A cookie of a known service proves that the service runs without consent.

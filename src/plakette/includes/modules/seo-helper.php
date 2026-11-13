@@ -449,7 +449,7 @@ class Plakette_Company_Schema {
 
 		$profiles = array_values(
 			array_filter(
-				self::lines( $get( 'profiles' ) ),
+				array_unique( array_merge( array( $get( 'gbp_url' ) ), self::lines( $get( 'profiles' ) ) ) ),
 				function ( $url ) {
 					return (bool) wp_http_validate_url( $url );
 				}

@@ -170,7 +170,8 @@ class Plakette_Log {
 
 			case 'postmeta':
 				if ( $op[3] ) {
-					update_post_meta( $op[1], $op[2], $op[4] );
+					// update_post_meta() unslashes – slash, so JSON and other backslashes survive (Breakdance tree).
+					update_post_meta( $op[1], $op[2], wp_slash( $op[4] ) );
 				} else {
 					delete_post_meta( $op[1], $op[2] );
 				}
@@ -329,7 +330,7 @@ class Plakette_Log {
 	public static function set_postmeta( $post_id, $key, $value, array &$undo ) {
 		$existed = metadata_exists( 'post', $post_id, $key );
 		$undo[]  = array( 'postmeta', (int) $post_id, $key, $existed, $existed ? get_post_meta( $post_id, $key, true ) : null );
-		update_post_meta( $post_id, $key, $value );
+		update_post_meta( $post_id, $key, wp_slash( $value ) );
 	}
 
 	public static function set_site_option( $name, $value, array &$undo ) {
