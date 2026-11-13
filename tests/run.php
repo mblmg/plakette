@@ -9,6 +9,9 @@ header( 'Content-Type: application/json; charset=utf-8' );
 $step = isset( $_GET['step'] ) ? $_GET['step'] : 'audit';
 $out  = array( 'step' => $step );
 
+// Never write to the real OpenStreetMap from tests: notes go to the OSM development server.
+add_filter( 'plakette_osm_notes_api', fn() => 'https://master.apis.dev.openstreetmap.org/api/0.6/' );
+
 function plk_summary( $report ) {
 	$rows = array();
 	foreach ( $report['checks'] as $c ) {

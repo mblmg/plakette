@@ -291,6 +291,10 @@ class Plakette_Log {
 				deactivate_plugins( (string) $op[1], true );
 				return true;
 
+			case 'osm_tags':
+				// [ 'osm_tags', type, id, version after the edit, old tags, new tags ]
+				return class_exists( 'Plakette_Osm_Edit' ) ? Plakette_Osm_Edit::undo( (string) $op[1], (int) $op[2], (int) $op[3], (array) $op[4], (array) $op[5] ) : true;
+
 			case 'callback':
 				if ( is_string( $op[1] ) && 0 === strpos( $op[1], 'Plakette_' ) && is_callable( $op[1] ) ) {
 					call_user_func( $op[1] );

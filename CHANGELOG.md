@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.4.0] - 2026-11-13
+
+### Neu
+- **OpenStreetMap genauso gut versorgt wie Google:** neue Prüfung „Firmendaten stimmen mit OpenStreetMap überein“ –
+  ohne API-Schlüssel und ohne Kosten. Plakette findet das Unternehmen selbst (Nominatim), verknüpft den Eintrag
+  (`sameAs`/`hasMap` und neu `geo`-Koordinaten im Firmenprofil) und vergleicht Name, Adresse, Telefon, Öffnungszeiten
+  und Website mit den Rohdaten der OSM-API. Öffnungszeiten werden zwischen OSM-Syntax (`Mo-Fr 09:00-18:00; Sa,PH off`)
+  und den Firmendaten übersetzt. Abweichungen lassen sich übernehmen (rückgängig machbar) oder als Kartenhinweis an die
+  OpenStreetMap-Community melden – fehlt das Unternehmen ganz, meldet Plakette es mit allen Angaben als fertige OSM-Tags.
+  Ohne verbundenes OSM-Konto ändert Plakette die Karte nie selbst und zeigt an, ob ein Hinweis noch offen ist.
+  Neues Feld „OpenStreetMap-Eintrag (Link)“ in den Firmendaten (freiwillig).
+- **Korrekturen direkt in OpenStreetMap eintragen:** Unter Einstellungen › OpenStreetMap verbindest du Plakette mit
+  deinem eigenen OSM-Konto (OAuth 2.0 mit PKCE, ohne Passwort in WordPress). Danach trägt Plakette die Korrekturen,
+  die du auswählst, selbst in die Karte ein, statt Freiwillige per Hinweis darum zu bitten. Pro Korrektur entsteht
+  ein Änderungssatz mit Beschreibung und Quelle; geändert werden nur die gezeigten Angaben deines eigenen Eintrags.
+  Regeln aus OSM, die die Firmendaten nicht kennen (Feiertage `PH`, Saisonzeiten), bleiben erhalten,
+  `check_date:opening_hours` wird gesetzt, Abkürzungen wie „Str.“ werden ausgeschrieben. Hat jemand den Eintrag
+  inzwischen geändert, bricht Plakette ab. „Rückgängig“ im Protokoll stellt die alten Werte wieder her – solange
+  niemand den Eintrag weiter bearbeitet hat. Den Namen ändert Plakette nie (in OSM steht der Name vom Schild).
+  Getestet gegen den OSM-Testserver (`tests/osm-live.php`, Testmodus `define( 'PLAKETTE_OSM_DEV', true )`).
+
 ## [1.3.0] - 2026-11-13
 
 ### Neu

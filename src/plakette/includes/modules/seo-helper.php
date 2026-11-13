@@ -447,9 +447,13 @@ class Plakette_Company_Schema {
 			$new['openingHoursSpecification'] = $hours;
 		}
 
+		// OpenStreetMap object: canonical link (also for short forms like "n123").
+		$osm_ref = class_exists( 'Plakette_Osm_Profile' ) ? Plakette_Osm_Profile::parse( $get( 'osm_url' ) ) : null;
+		$osm_url = $osm_ref ? Plakette_Osm_Profile::link( $osm_ref['type'], $osm_ref['id'] ) : '';
+
 		$profiles = array_values(
 			array_filter(
-				array_unique( array_merge( array( $get( 'gbp_url' ) ), self::lines( $get( 'profiles' ) ) ) ),
+				array_unique( array_merge( array( $get( 'gbp_url' ), $osm_url ), self::lines( $get( 'profiles' ) ) ) ),
 				function ( $url ) {
 					return (bool) wp_http_validate_url( $url );
 				}
@@ -463,6 +467,19 @@ class Plakette_Company_Schema {
 					break;
 				}
 			}
+			if ( empty( $new['hasMap'] ) && '' !== $osm_url ) {
+				$new['hasMap'] = $osm_url;
+			}
+		}
+
+		// Coordinates of the business from the linked OSM object (remembered by the audit, no request here).
+		$place = $osm_ref ? Plakette_Osm_Profile::place() : null;
+		if ( $place && isset( $place['lat'], $place['lon'] ) && 'Organization' !== $type ) {
+			$new['geo'] = array(
+				'@type'     => 'GeoCoordinates',
+				'latitude'  => round( (float) $place['lat'], 6 ),
+				'longitude' => round( (float) $place['lon'], 6 ),
+			);
 		}
 
 		if ( '' !== $get( 'owner' ) ) {

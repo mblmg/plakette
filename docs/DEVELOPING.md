@@ -115,6 +115,24 @@ fehlen“) prüft, dass es sie gibt und dass sie wirken – der Test muss „kei
 - Google-Unternehmensprofil: `modules/google-profile.php` (`Plakette_Google_Profile`: Kurzlink auflösen → Places API
   `places:searchText` → Place ID in Option `plakette_gbp_place`; Details 12 h im Transient), Prüfung `seo_google_profile`
   in `checks-seo-helper.php`. Felder: `company.gbp_url`, `google.places_key` (Feldtyp `password`). Nur lesen, nie schreiben.
+- OpenStreetMap: `modules/osm-profile.php` (`Plakette_Osm_Profile`: Objekt über die OSM-API lesen – Way-Mittelpunkt aus
+  `/full`, Relation über Nominatim `lookup`; Suche über Nominatim; Öffnungszeiten `parse_osm_hours()` ⇄ `text_days()` /
+  `format_days()`; Kartenhinweise `send_note()` → Option `plakette_osm_notes`), Prüfung `seo_osm_profile` in `checks-osm.php`.
+  Feld `company.osm_url`; Option `plakette_osm_place` merkt Objekt + Koordinaten fürs Schema (`geo`, ohne Abruf beim Seitenaufruf).
+  Ohne verbundenes Konto nur Hinweise; direktes Schreiben nur über `Plakette_Osm_Edit` (siehe unten). Tests gegen den OSM-Testserver:
+  Filter `plakette_osm_notes_api` → `https://master.apis.dev.openstreetmap.org/api/0.6/` (setzt `tests/run.php` immer; `plakette_osm_api` für Lesezugriffe, `plakette_osm_nominatim` für die Suche).
+- OSM-Konto/Bearbeiten: `modules/osm-edit.php` (`Plakette_Osm_Edit`): OAuth 2.0 + PKCE „out of band“ (OSM zeigt einen Code,
+  Nutzer fügt ihn unter Einstellungen › OpenStreetMap ein), öffentliche App ohne Secret, Client-ID `PLAKETTE_OSM_CLIENT_ID`
+  bzw. Filter `plakette_osm_client_id` oder Feld `osm.client_id`; Token in `plakette_osm_token` (gilt nur für den Server,
+  auf dem es ausgestellt wurde). `changes()` (Tags je Feld, behält PH/Saisonregeln, `contact:*`-Schlüssel, `check_date:opening_hours`),
+  `write()` (frisches XML, Abbruch bei geänderten Tags, ein Änderungssatz je Fix), Rückgängig-Op `osm_tags` in `class-log.php`.
+  **Nie** ohne Auswahl des Nutzers schreiben, nie mehrere Objekte, nie den Namen – sonst gilt der Automated-Edits-Kodex.
+  `Plakette_Settings::get()` darf in einem `plakette_settings_sections`-Filter nicht aufgerufen werden (Endlosrekursion) –
+  dort `get_option( Plakette_Settings::OPTION )` lesen.
+  Client-ID der App „Plakette“ auf openstreetmap.org: `Plakette_Osm_Edit::CLIENT_ID_LIVE`. Testmodus:
+  `define( 'PLAKETTE_OSM_DEV', true )` → alles gegen `master.apis.dev.openstreetmap.org` (eigene Client-ID ins Feld eintragen);
+  Live-Test dort: `wp eval-file …/tests/osm-live.php` (legt ein Testobjekt an, bearbeitet, nimmt zurück, prüft Konflikte, löscht es).
+  Externer Prüfer für erzeugte Öffnungszeiten: `opening_hours.js` (npm `opening_hours`, keine Warnungen, `prettifyValue()` = Wert).
 - Sicherungen: Hoster können `define( 'PLAKETTE_BACKUPS', 'Name' )` setzen (oder Filter `plakette_host_backups`) – dann gilt
   security_backups als erfüllt. Sonst kann der Nutzer „Server sichert – als erfüllt markieren“ (Option `plakette_backups_confirmed`, rückgängig im Protokoll).
 
