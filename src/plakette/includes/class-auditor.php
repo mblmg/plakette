@@ -80,13 +80,17 @@ class Plakette_Auditor {
 	}
 
 	public static function evaluate( Plakette_Check $check, Plakette_Context $ctx ) {
+		Plakette_Modules::start_reading();
 		try {
 			$result = $check->run( $ctx );
 		} catch ( Throwable $e ) {
 			$result = array( 'status' => 'skip', 'detail' => sprintf( __( 'Prüfung fehlgeschlagen: %s', 'plakette' ), $e->getMessage() ) );
 		}
+		// Which switches the result depends on: a fix elsewhere that changes one of them re-evaluates this check.
+		$reads = array_values( array_unique( array_merge( Plakette_Modules::stop_reading(), (array) $check->watch ) ) );
 		// The result may override meta fields (kind, fix_label, weight).
-		$merged = array_merge( $check->meta(), $result );
+		$merged          = array_merge( $check->meta(), $result );
+		$merged['reads'] = $reads;
 		if ( 'letter' === $merged['kind'] && 'letter' !== $check->kind && empty( $result['fix_does'] ) ) {
 			$merged['fix_label'] = __( 'Nachricht an den Hoster', 'plakette' );
 			$merged['fix_does']  = __( 'Das kann auf deinem Server nur dein Hoster ändern. Plakette hat eine fertige Nachricht vorbereitet: Kopiere sie und schicke sie per E-Mail oder Kontaktformular an deinen Hoster.', 'plakette' );
@@ -148,6 +152,90 @@ class Plakette_Auditor {
 		$report['scores'] = self::scores( $report['checks'] );
 		update_option( self::OPTION, $report, false );
 		return $report;
+	}
+
+	/**
+	 * Keys a list of undo operations touches: 'module key' for modules, 'set:<section>' for settings.
+	 * The undo ops describe the old state of everything a fix changed – the same keys changed.
+	 *
+	 * @return string[]
+	 */
+	public static function touched( array $ops ) {
+		$keys = array();
+		foreach ( $ops as $op ) {
+			if ( ! is_array( $op ) || empty( $op[0] ) ) {
+				continue;
+			}
+			if ( 'module' === $op[0] && isset( $op[1] ) ) {
+				$keys[] = (string) $op[1];
+			} elseif ( 'option' === $op[0] && isset( $op[1] ) && Plakette_Settings::OPTION === $op[1] ) {
+				$old = is_array( $op[3] ?? null ) ? $op[3] : array();
+				$new = (array) get_option( Plakette_Settings::OPTION, array() );
+				foreach ( array_unique( array_merge( array_keys( $old ), array_keys( $new ) ) ) as $section ) {
+					if ( ( $old[ $section ] ?? null ) !== ( $new[ $section ] ?? null ) ) {
+						$keys[] = 'set:' . $section;
+					}
+				}
+			} elseif ( 'option' === $op[0] && isset( $op[1] ) && Plakette_Modules::OPTION === $op[1] ) {
+				$keys[] = '*';
+			}
+		}
+		return array_values( array_unique( $keys ) );
+	}
+
+	/**
+	 * After a fix or an undo: evaluates $id again plus every check whose result depends on a switch the change
+	 * touched (e.g. „Dateien lokal ausliefern“ switched on from the cookie banner check updates the CDN check below).
+	 *
+	 * @param string   $id      Check that was fixed ('' = none).
+	 * @param string[] $touched Keys from touched().
+	 * @return array [ report, changed check ids (other than $id) whose status changed ]
+	 */
+	public static function refresh_related( $id, array $touched ) {
+		$report = get_option( self::OPTION );
+		if ( ! is_array( $report ) || empty( $report['checks'] ) ) {
+			return array( '' !== $id ? self::run() : $report, array() );
+		}
+		$ids = '' !== $id ? array( $id ) : array();
+		if ( $touched ) {
+			foreach ( $report['checks'] as $c ) {
+				if ( isset( $c['reads'] ) ) {
+					$reads = (array) $c['reads'];
+				} else {
+					$check = self::get( $c['id'] ); // report from before 1.5.0
+					$reads = $check ? (array) $check->watch : array();
+				}
+				if ( in_array( '*', $touched, true ) ? (bool) $reads : array_intersect( $reads, $touched ) ) {
+					$ids[] = $c['id'];
+				}
+			}
+		}
+		$ids = array_values( array_unique( $ids ) );
+		if ( ! $ids ) {
+			return array( $report, array() );
+		}
+		$before = array();
+		foreach ( $report['checks'] as $c ) {
+			$before[ $c['id'] ] = $c['status'] ?? '';
+		}
+		$ctx     = new Plakette_Context();
+		$changed = array();
+		foreach ( $report['checks'] as $i => $c ) {
+			if ( ! in_array( $c['id'], $ids, true ) ) {
+				continue;
+			}
+			$check = self::get( $c['id'] );
+			if ( ! $check ) {
+				continue;
+			}
+			$report['checks'][ $i ] = self::evaluate( $check, $ctx );
+			if ( $c['id'] !== $id && $report['checks'][ $i ]['status'] !== $before[ $c['id'] ] ) {
+				$changed[] = $c['id'];
+			}
+		}
+		$report['scores'] = self::scores( $report['checks'] );
+		update_option( self::OPTION, $report, false );
+		return array( $report, $changed );
 	}
 
 	public static function scores( array $checks ) {

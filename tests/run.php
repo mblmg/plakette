@@ -114,6 +114,37 @@ if ( 'audit' === $step ) {
 		$need( $c && 'legal' === $c->area, $id . ' in area legal' );
 	}
 	$out['missing'] = $missing;
+} elseif ( 'related' === $step ) {
+	// A fix that switches on a module another check depends on updates that check too (cookie banner → CDN files).
+	$problems = array();
+	$report   = Plakette_Auditor::run();
+	$by       = fn( $r, $id ) => current( array_filter( $r['checks'], fn( $c ) => $c['id'] === $id ) );
+	$cdn      = $by( $report, 'privacy_cdn' );
+	if ( 'fail' !== $cdn['status'] ) {
+		$problems[] = 'privacy_cdn vorher nicht fail: ' . $cdn['status'];
+	}
+	if ( ! in_array( 'cdn_local', (array) $cdn['reads'], true ) ) {
+		$problems[] = 'privacy_cdn liest cdn_local nicht';
+	}
+	$undo = array();
+	Plakette_Auditor::get( 'privacy_cdn' )->fix( array( 'value' => '', 'items' => array() ), $undo ); // as the cookie banner fix does
+	list( $after, $also ) = Plakette_Auditor::refresh_related( 'privacy_consent', Plakette_Auditor::touched( $undo ) );
+	// Re-evaluated at once (pass on a real server; in Playground each worker has its own uploads folder, so the page
+	// worker may not see the fresh local copy yet and says "warn: not downloaded yet" – also a new evaluation).
+	if ( 'fail' === $by( $after, 'privacy_cdn' )['status'] ) {
+		$problems[] = 'privacy_cdn nach Einschalten nicht neu bewertet: ' . $by( $after, 'privacy_cdn' )['detail'];
+	}
+	$out['cdn_after'] = $by( $after, 'privacy_cdn' )['status'];
+	if ( ! in_array( 'privacy_cdn', $also, true ) ) {
+		$problems[] = 'privacy_cdn nicht als mit-aktualisiert gemeldet';
+	}
+	Plakette_Log::$applied = array();
+	Plakette_Log::apply_ops( $undo );
+	list( $back ) = Plakette_Auditor::refresh_related( '', Plakette_Auditor::touched( Plakette_Log::$applied ) );
+	if ( 'fail' !== $by( $back, 'privacy_cdn' )['status'] ) {
+		$problems[] = 'privacy_cdn nach Rückgängig nicht wieder fail: ' . $by( $back, 'privacy_cdn' )['status'];
+	}
+	$out['problems'] = $problems;
 } elseif ( 'state' === $step ) {
 	$out['modules'] = get_option( 'plakette_modules' );
 	foreach ( array( 'blog_public', 'permalink_structure', 'blogdescription', 'wp_attachment_pages_enabled', 'site_icon', 'home' ) as $o ) {

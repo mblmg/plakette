@@ -12,6 +12,27 @@ class Plakette_Modules {
 
 	private static $cache = null;
 
+	/** @var array|null Keys read while a check runs (see start_reading()) – which checks depend on which module. */
+	private static $reads = null;
+
+	public static function start_reading() {
+		self::$reads = array();
+	}
+
+	/** Records a read from elsewhere, e.g. Plakette_Settings::get() notes 'set:<section>'. */
+	public static function note_read( $key ) {
+		if ( null !== self::$reads ) {
+			self::$reads[ $key ] = true;
+		}
+	}
+
+	/** @return string[] keys read since start_reading(); stops recording. */
+	public static function stop_reading() {
+		$keys        = array_keys( (array) self::$reads );
+		self::$reads = null;
+		return $keys;
+	}
+
 	public static function all() {
 		if ( null === self::$cache ) {
 			self::$cache = (array) get_option( self::OPTION, array() );
@@ -20,11 +41,17 @@ class Plakette_Modules {
 	}
 
 	public static function get( $key, $default = null ) {
+		if ( null !== self::$reads ) {
+			self::$reads[ $key ] = true;
+		}
 		$all = self::all();
 		return array_key_exists( $key, $all ) ? $all[ $key ] : $default;
 	}
 
 	public static function on( $key ) {
+		if ( null !== self::$reads ) {
+			self::$reads[ $key ] = true;
+		}
 		return ! empty( self::all()[ $key ] );
 	}
 

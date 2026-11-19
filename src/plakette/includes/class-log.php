@@ -136,10 +136,14 @@ class Plakette_Log {
 		return $errors ? new WP_Error( 'plakette_partial', implode( ' ', $errors ) ) : true;
 	}
 
+	/** @var array Undo operations replayed in this request (Plakette_Auditor::touched() reads them after an undo). */
+	public static $applied = array();
+
 	/** Replays undo operations in reverse order. @return string[] error messages */
 	public static function apply_ops( array $ops ) {
 		$errors = array();
 		foreach ( array_reverse( $ops ) as $op ) {
+			self::$applied[] = $op;
 			$result = self::apply_op( $op );
 			if ( is_wp_error( $result ) ) {
 				$errors[] = $result->get_error_message();
@@ -239,6 +243,18 @@ class Plakette_Log {
 				} elseif ( file_exists( $op[1] ) ) {
 					wp_delete_file( $op[1] );
 				}
+				return true;
+
+			case 'post_raw':
+				// [ 'post_raw', post id, old post_content ] – written as is (no filters, no revision).
+				$GLOBALS['wpdb']->update( $GLOBALS['wpdb']->posts, array( 'post_content' => (string) $op[2] ), array( 'ID' => (int) $op[1] ) ); // phpcs:ignore WordPress.DB
+				clean_post_cache( (int) $op[1] );
+				return true;
+
+			case 'postmeta_raw':
+				// [ 'postmeta_raw', meta id, post id, old raw (serialized) value ]
+				$GLOBALS['wpdb']->update( $GLOBALS['wpdb']->postmeta, array( 'meta_value' => (string) $op[3] ), array( 'meta_id' => (int) $op[1] ) ); // phpcs:ignore WordPress.DB
+				wp_cache_delete( (int) $op[2], 'post_meta' );
 				return true;
 
 			case 'attachment_meta':

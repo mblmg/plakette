@@ -204,9 +204,10 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 	public $problem   = 'Sehr große Bilddateien';
 	public $explain   = 'Fotos direkt von Kamera oder Handy sind oft mehrere Megabyte groß und viel breiter als jeder Bildschirm. Das ist meist der größte einzelne Grund für langsame Seiten. Plakette zählt nur Bilder, die auf deiner Website wirklich verwendet werden – was nur in der Mediathek liegt, lädt kein Besucher.';
 	public $fix_label = 'Ausgewählte Bilder verkleinern';
-	public $fix_does  = 'Verkleinert die Bilder auf höchstens 2048 Pixel Breite und speichert sie platzsparend (Qualität 82 %). Der Unterschied ist mit bloßem Auge kaum zu sehen. Die Originale werden gesichert und lassen sich zurückholen.';
+	public $fix_does  = 'Verkleinert die Bilder auf höchstens 2048 Pixel Breite und speichert sie platzsparend (Qualität 82 %). Der Unterschied ist mit bloßem Auge kaum zu sehen. Wird ein Bild in seinem Format nicht kleiner (typisch: Fotos als PNG mit transparenten Stellen), ersetzt Plakette es durch eine WebP-Fassung und trägt die neue Adresse überall ein, wo das Bild verwendet wird – auch in Page-Builder-Daten. Die alten Dateien bleiben liegen; alles lässt sich im Protokoll rückgängig machen.';
 	public $kind      = 'items';
 	public $batch     = 2;
+	public $risk      = 'review';
 
 	const MAX_BYTES = 350000;
 	const MAX_SIDE  = 2048;
@@ -301,8 +302,14 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 		$notes        = array();
 		$unused       = 0;
 		$unused_bytes = 0;
+		$ignored = $this->ignored();
+		$skipped = 0;
 		foreach ( $big as $id => $info ) {
 			list( $file, $bytes, $w, $h ) = $info;
+			if ( isset( $ignored[ 'att:' . $id ] ) ) {
+				++$skipped; // the user marked it as a false positive
+				continue;
+			}
 			// A big original only costs visitors when they get it: judge what is delivered, not the library.
 			if ( isset( $delivered[ $id ] ) && $delivered[ $id ] <= self::MAX_DELIVERED ) {
 				++$covered;
@@ -324,13 +331,21 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 				continue;
 			}
 			$total  += $bytes;
+			$sub     = isset( $delivered[ $id ] )
+				? sprintf( __( '%1$s, %2$d × %3$d px – Besucher laden %4$s', 'plakette' ), self::size( $bytes ), $w, $h, self::size( $delivered[ $id ] ) )
+				: sprintf( '%s, %d × %d px', self::size( $bytes ), $w, $h );
+			$copy    = Plakette_Image_Delivery::modern_copy_bytes( $file );
+			if ( $copy ) {
+				/* translators: %s: size */
+				$sub .= ' · ' . sprintf( __( 'WebP-/AVIF-Kopie liegt daneben (%s), wird hier aber nicht ausgeliefert', 'plakette' ), self::size( $copy ) );
+			}
 			$items[] = array(
-				'id'    => 'att:' . $id,
-				'label' => wp_basename( $file ),
-				'sub'   => isset( $delivered[ $id ] )
-					? sprintf( __( '%1$s, %2$d × %3$d px – Besucher laden %4$s', 'plakette' ), self::size( $bytes ), $w, $h, self::size( $delivered[ $id ] ) )
-					: sprintf( '%s, %d × %d px', self::size( $bytes ), $w, $h ),
-				'thumb' => wp_get_attachment_image_url( $id, 'thumbnail' ),
+				'id'     => 'att:' . $id,
+				'label'  => wp_basename( $file ),
+				'sub'    => $sub,
+				'thumb'  => wp_get_attachment_image_url( $id, 'thumbnail' ),
+				'edit'   => admin_url( 'post.php?post=' . $id . '&action=edit' ),
+				'where'  => Plakette_Image_Usage::places( $id, $file ),
 			);
 		}
 		foreach ( $heavy as $row ) {
@@ -359,18 +374,27 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 				self::size( $unused_bytes )
 			);
 		}
+		if ( $skipped ) {
+			++$info;
+			/* translators: %d: number of images */
+			$notes[] = sprintf( _n( '%d Bild hast du als Falschbefund ausgenommen.', '%d Bilder hast du als Falschbefund ausgenommen.', $skipped, 'plakette' ), $skipped );
+		}
+		$extra = array(
+			'ignorable' => true,
+			'ignored'   => $this->ignored_list(),
+		);
 		if ( ! $items ) {
 			$detail = $notes && count( $notes ) > $info
 				? __( 'Kein Original ist zu groß – aber manche Bilder kommen bei Besuchern noch recht schwer an.', 'plakette' )
 				: __( 'Besucher laden keine unnötig großen Bilder.', 'plakette' );
 			return $notes && count( $notes ) > $info
-				? $this->warn( $detail, array( 'notes' => $notes, 'kind' => 'none' ) )
-				: $this->pass( $detail, $notes ? array( 'notes' => $notes ) : array() );
+				? $this->warn( $detail, array( 'notes' => $notes, 'kind' => 'none' ) + $extra )
+				: $this->pass( $detail, ( $notes ? array( 'notes' => $notes ) : array() ) + $extra );
 		}
 		if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/jpeg' ) ) ) {
-			return $this->fail( __( 'Große Bilder gefunden.', 'plakette' ), array( 'items' => $items, 'notes' => $notes, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie die PHP-Erweiterung GD oder Imagick, damit WordPress Bilder bearbeiten kann.', 'plakette' ) ) ) );
+			return $this->fail( __( 'Große Bilder gefunden.', 'plakette' ), array( 'items' => $items, 'notes' => $notes, 'kind' => 'letter', 'letter' => $this->letter( __( 'Bitte aktivieren Sie die PHP-Erweiterung GD oder Imagick, damit WordPress Bilder bearbeiten kann.', 'plakette' ) ) ) + $extra );
 		}
-		return $this->fail( sprintf( _n( '%1$d Bild, das auf deiner Website verwendet wird, ist %2$s groß.', '%1$d Bilder, die auf deiner Website verwendet werden, sind zusammen %2$s groß.', count( $items ), 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items, 'notes' => $notes ) );
+		return $this->fail( sprintf( _n( '%1$d Bild, das auf deiner Website verwendet wird, ist %2$s groß.', '%1$d Bilder, die auf deiner Website verwendet werden, sind zusammen %2$s groß.', count( $items ), 'plakette' ), count( $items ), self::size( $total ) ), array( 'items' => $items, 'notes' => $notes ) + $extra );
 	}
 
 	/**
@@ -423,8 +447,11 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 	}
 
 	public function fix( array $req, array &$undo ) {
-		$saved = 0;
-		$done  = 0;
+		$saved  = 0;
+		$done   = 0;
+		$webp   = 0;
+		$places = 0;
+		$left   = array();
 		foreach ( (array) ( isset( $req['items'] ) ? $req['items'] : array() ) as $item ) {
 			if ( ! preg_match( '/^att:(\d+)$/', isset( $item['id'] ) ? (string) $item['id'] : '', $m ) || ! current_user_can( 'edit_post', (int) $m[1] ) ) {
 				continue;
@@ -432,50 +459,97 @@ class Plakette_Check_Large_Images extends Plakette_Speed_Check {
 			$id   = (int) $m[1];
 			$file = get_attached_file( $id );
 			if ( ! $file || ! file_exists( $file ) ) {
+				$left[] = sprintf( __( 'Bild #%d: Datei nicht gefunden', 'plakette' ), $id );
 				continue;
 			}
-			$before = filesize( $file );
-			$editor = wp_get_image_editor( $file );
-			if ( is_wp_error( $editor ) ) {
+			$name = wp_basename( $file );
+			$res  = $this->shrink( $id, $file, $undo );
+			if ( is_array( $res ) ) {
+				$saved += $res[0];
+				++$done;
 				continue;
 			}
-			$size = $editor->get_size();
-			if ( max( $size['width'], $size['height'] ) > self::MAX_SIDE ) {
-				$editor->resize( self::MAX_SIDE, self::MAX_SIDE, false );
-			}
-			$editor->set_quality( 82 );
-			$tmp    = $file . '.plakette-tmp.' . pathinfo( $file, PATHINFO_EXTENSION );
-			$result = $editor->save( $tmp, get_post_mime_type( $id ) );
-			if ( is_wp_error( $result ) || ! file_exists( $tmp ) ) {
+			// Not smaller in its own format (PNG photo with transparency, an already optimised file): WebP instead.
+			$alt = Plakette_Image_Replace::to_webp( $id, self::MAX_SIDE, $undo );
+			if ( is_array( $alt ) ) {
+				$saved  += $alt[0] - $alt[1];
+				$places += $alt[2];
+				++$webp;
 				continue;
 			}
-			clearstatcache();
-			$after = filesize( $tmp );
-			if ( $after >= $before ) {
-				wp_delete_file( $tmp );
-				continue;
-			}
-			$backup = Plakette_Env::backup_dir() . '/images/' . $id . '-' . wp_basename( $file );
-			wp_mkdir_p( dirname( $backup ) );
-			if ( ! copy( $file, $backup ) ) {
-				wp_delete_file( $tmp );
-				continue;
-			}
-			rename( $tmp, $file );
-			$meta   = wp_get_attachment_metadata( $id );
-			$undo[] = array( 'attachment_meta', $id, $meta );
-			$undo[] = array( 'file_restore', $file, $backup );
-			if ( is_array( $meta ) ) {
-				$meta['width']    = $result['width'];
-				$meta['height']   = $result['height'];
-				$meta['filesize'] = $after;
-				wp_update_attachment_metadata( $id, $meta );
-			}
-			$saved += $before - $after;
-			++$done;
+			$left[] = $name . ': ' . $res . ' ' . $alt->get_error_message();
 		}
 		Plakette_Page_Cache::purge_all();
-		return sprintf( __( '%1$d Bilder verkleinert, %2$s gespart.', 'plakette' ), $done, self::size( $saved ) );
+		$parts = array();
+		if ( $done ) {
+			/* translators: %d: number */
+			$parts[] = sprintf( _n( '%d Bild verkleinert', '%d Bilder verkleinert', $done, 'plakette' ), $done );
+		}
+		if ( $webp ) {
+			/* translators: 1: number, 2: number of places */
+			$parts[] = sprintf( _n( '%d Bild durch WebP ersetzt', '%d Bilder durch WebP ersetzt', $webp, 'plakette' ), $webp )
+				/* translators: %d: number of places */
+				. ' ' . sprintf( _n( '(neue Adresse an %d Stelle eingetragen)', '(neue Adresse an %d Stellen eingetragen)', $places, 'plakette' ), $places );
+		}
+		$msg = $parts
+			/* translators: 1: what was done, 2: size */
+			? sprintf( __( '%1$s, %2$s gespart.', 'plakette' ), implode( ', ', $parts ), self::size( $saved ) )
+			: __( 'Kein Bild geändert.', 'plakette' );
+		if ( $left ) {
+			/* translators: %s: list */
+			$msg .= ' ' . sprintf( __( 'Nicht möglich: %s', 'plakette' ), implode( '; ', $left ) );
+		}
+		if ( ! $done && ! $webp ) {
+			return new WP_Error( 'plakette_images', $msg );
+		}
+		return $msg;
+	}
+
+	/**
+	 * Smaller file in the same format (resize + quality 82), original backed up.
+	 *
+	 * @return array|string [ saved bytes ] or the reason why not
+	 */
+	private function shrink( $id, $file, array &$undo ) {
+		$before = filesize( $file );
+		$editor = wp_get_image_editor( $file );
+		if ( is_wp_error( $editor ) ) {
+			return __( 'kann nicht bearbeitet werden.', 'plakette' );
+		}
+		$size = $editor->get_size();
+		if ( max( $size['width'], $size['height'] ) > self::MAX_SIDE ) {
+			$editor->resize( self::MAX_SIDE, self::MAX_SIDE, false );
+		}
+		$editor->set_quality( 82 );
+		$tmp    = $file . '.plakette-tmp.' . pathinfo( $file, PATHINFO_EXTENSION );
+		$result = $editor->save( $tmp, get_post_mime_type( $id ) );
+		if ( is_wp_error( $result ) || ! file_exists( $tmp ) ) {
+			return __( 'Speichern fehlgeschlagen.', 'plakette' );
+		}
+		clearstatcache();
+		$after = filesize( $tmp );
+		// Less than 10 % gained is not worth a changed file.
+		if ( $after > $before * 0.9 ) {
+			wp_delete_file( $tmp );
+			return __( 'im eigenen Format nicht kleiner zu bekommen.', 'plakette' );
+		}
+		$backup = Plakette_Env::backup_dir() . '/images/' . $id . '-' . wp_basename( $file );
+		wp_mkdir_p( dirname( $backup ) );
+		if ( ! copy( $file, $backup ) ) {
+			wp_delete_file( $tmp );
+			return __( 'Sicherung fehlgeschlagen.', 'plakette' );
+		}
+		rename( $tmp, $file );
+		$meta   = wp_get_attachment_metadata( $id );
+		$undo[] = array( 'attachment_meta', $id, $meta );
+		$undo[] = array( 'file_restore', $file, $backup );
+		if ( is_array( $meta ) ) {
+			$meta['width']    = $result['width'];
+			$meta['height']   = $result['height'];
+			$meta['filesize'] = $after;
+			wp_update_attachment_metadata( $id, $meta );
+		}
+		return array( $before - $after );
 	}
 }
 

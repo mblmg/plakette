@@ -852,6 +852,7 @@ class Plakette_Check_Legal_Privacy_Policy extends Plakette_Check {
 
 class Plakette_Check_Legal_Privacy_Coverage extends Plakette_Check {
 	public $id        = 'legal_privacy_coverage';
+	public $watch     = array( 'cdn_local', 'local_fonts', 'embeds', 'local_avatars', 'remove_services', 'consent', 'stats', 'no_emoji' );
 	public $area      = 'legal';
 	public $group     = 'DSGVO & Cookies';
 	public $weight    = 6;

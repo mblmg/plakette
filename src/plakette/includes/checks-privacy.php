@@ -133,6 +133,7 @@ abstract class Plakette_Privacy_Check extends Plakette_Check {
 
 class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 	public $id        = 'privacy_third_party';
+	public $watch     = array( 'cdn_local', 'local_fonts', 'embeds', 'local_avatars', 'remove_services', 'consent', 'stats', 'no_emoji' );
 	public $weight    = 3;
 	public $title     = 'Keine fremden Server ohne Einwilligung';
 	public $problem   = 'Deine Seite verbindet Besucher mit fremden Servern';
@@ -393,6 +394,15 @@ class Plakette_Privacy_Evidence {
 	 * }
 	 */
 	public static function collect( Plakette_Context $ctx ) {
+		if ( $ctx->home_ok() ) {
+			// Which banner visitors see – for the status line under Einstellungen › Cookie-Banner.
+			$seen = Plakette_Services::consent_tool( $ctx->html() );
+			$seen = array( 'name' => 'Plakette' === $seen ? '' : $seen, 'time' => time() );
+			$old  = get_option( 'plakette_consent_tool' );
+			if ( ! is_array( $old ) || ( $old['name'] ?? null ) !== $seen['name'] ) {
+				update_option( 'plakette_consent_tool', $seen, false );
+			}
+		}
 		$probe = self::probe();
 		$fresh = self::probe_fresh( $probe );
 		$e     = array(
@@ -539,6 +549,9 @@ class Plakette_Privacy_Evidence {
 				return array( 'key' => 'm:fonts', 'label' => __( 'Schriften lokal speichern (statt Google Fonts)', 'plakette' ), 'checked' => true, 'avoidable' => true, 'check' => 'privacy_google_fonts' );
 			case 'public-cdn':
 			case 'font-awesome':
+				if ( Plakette_Modules::on( 'cdn_local' ) && Plakette_Performance::blocked_files() ) {
+					return array( 'advice' => __( 'Öffentliches CDN: Lokales Ausliefern ist an, aber einige Dateien gehen nicht lokal (Details beim Prüfpunkt „Skripte und Stylesheets kommen vom eigenen Server“). Schalte im Theme oder Plugin die CDN-Option ab.', 'plakette' ), 'avoidable' => false );
+				}
 				return array( 'key' => 'm:cdn', 'label' => __( 'Dateien von öffentlichen CDNs lokal ausliefern', 'plakette' ), 'checked' => true, 'avoidable' => true, 'check' => 'privacy_cdn' );
 			case 'gravatar':
 				return array( 'key' => 'm:avatars', 'label' => __( 'Profilbilder lokal erzeugen (statt Gravatar)', 'plakette' ), 'checked' => true, 'avoidable' => true, 'check' => 'privacy_gravatar' );
@@ -726,6 +739,7 @@ class Plakette_Privacy_Evidence {
 
 class Plakette_Check_Privacy_Consent extends Plakette_Privacy_Check {
 	public $id        = 'privacy_consent';
+	public $watch     = array( 'cdn_local', 'local_fonts', 'embeds', 'local_avatars', 'remove_services', 'consent', 'stats', 'no_emoji' );
 	public $group     = 'DSGVO & Cookies';
 	public $weight    = 9;
 	public $title     = 'Kein Cookie-Banner nötig';

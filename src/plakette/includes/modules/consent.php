@@ -60,7 +60,9 @@ class Plakette_Consent {
 		$sections['consent'] = array(
 			'title'  => __( 'Cookie-Banner', 'plakette' ),
 			'desc'   => __( 'Der Cookie-Banner von Plakette fragt deine Besucher, bevor Statistik-, Marketing- und Mediendienste geladen werden. Die Texte richten sich an Besucher und stehen deshalb in der Sie-Form. Den Link „Cookie-Einstellungen“ kannst du mit dem Shortcode [plakette_cookie_settings] z. B. in den Footer setzen.', 'plakette' ),
+			'badge'  => self::badge(),
 			'fields' => array(
+				array( 'key' => 'status', 'label' => '', 'type' => 'info', 'html' => self::status_html() ),
 				array( 'key' => 'title', 'label' => __( 'Überschrift', 'plakette' ), 'type' => 'text', 'default' => $d['title'] ),
 				array( 'key' => 'text', 'label' => __( 'Text', 'plakette' ), 'type' => 'textarea', 'default' => $d['text'] ),
 				array( 'key' => 'btn_all', 'label' => __( 'Knopf „Alle akzeptieren“', 'plakette' ), 'type' => 'text', 'default' => $d['btn_all'] ),
@@ -78,6 +80,72 @@ class Plakette_Consent {
 			),
 		);
 		return $sections;
+	}
+
+	/**
+	 * Which cookie banner the visitors see: [ state on|other|both|none, foreign tool name ].
+	 * The foreign tool comes from the last audit (Plakette_Privacy_Evidence::collect()).
+	 */
+	public static function status() {
+		$seen    = get_option( 'plakette_consent_tool' );
+		$foreign = is_array( $seen ) ? (string) ( $seen['name'] ?? '' ) : '';
+		if ( '' === $foreign ) {
+			$foreign = Plakette_Services::consent_tool(); // plugin constants, no HTML needed
+			$foreign = 'Plakette' === $foreign ? '' : $foreign;
+		}
+		$on = Plakette_Modules::on( 'consent' );
+		return array(
+			'state'   => $on ? ( '' !== $foreign ? 'both' : 'on' ) : ( '' !== $foreign ? 'other' : 'none' ),
+			'foreign' => $foreign,
+			'known'   => is_array( $seen ),
+		);
+	}
+
+	/** Short state next to the section title: [ text, tone on|off|warn ]. */
+	private static function badge() {
+		$st = self::status();
+		switch ( $st['state'] ) {
+			case 'on':
+				return array( __( 'Aktiv', 'plakette' ), 'on' );
+			case 'both':
+				return array( __( 'Zwei Banner aktiv', 'plakette' ), 'warn' );
+			case 'other':
+				/* translators: %s: other consent tool */
+				return array( sprintf( __( 'Aus – %s aktiv', 'plakette' ), $st['foreign'] ), 'off' );
+		}
+		return array( __( 'Aus', 'plakette' ), 'off' );
+	}
+
+	private static function status_html() {
+		$st    = self::status();
+		$names = array();
+		foreach ( self::services() as $id ) {
+			$s = Plakette_Services::get( $id );
+			if ( $s ) {
+				$names[] = $s['name'];
+			}
+		}
+		$jump = ' <button type="button" class="plk-link" data-action="jump" data-id="privacy_consent">' . esc_html__( 'Zum Prüfpunkt', 'plakette' ) . '</button>';
+		switch ( $st['state'] ) {
+			case 'on':
+				$text = $names
+					/* translators: %s: services */
+					? sprintf( __( 'Der Plakette-Cookie-Banner ist eingeschaltet. Er fragt nach: %s.', 'plakette' ), implode( ', ', $names ) )
+					: __( 'Der Plakette-Cookie-Banner ist eingeschaltet.', 'plakette' );
+				return '<p class="plk-status is-on"><b>' . esc_html__( 'Aktiv', 'plakette' ) . '</b> ' . esc_html( $text ) . '</p>';
+			case 'both':
+				/* translators: %s: name of the other tool */
+				$text = sprintf( __( 'Der Plakette-Cookie-Banner ist eingeschaltet – auf deiner Website läuft aber auch %s. Zwei Banner verwirren Besucher: Schalte einen davon ab.', 'plakette' ), $st['foreign'] );
+				return '<p class="plk-status is-warn"><b>' . esc_html__( 'Zwei Banner', 'plakette' ) . '</b> ' . esc_html( $text ) . $jump . '</p>';
+			case 'other':
+				/* translators: %s: name of the other tool */
+				$text = sprintf( __( 'Deine Website nutzt %s. Der Plakette-Cookie-Banner ist ausgeschaltet – die Texte unten wirken erst, wenn du ihn einschaltest.', 'plakette' ), $st['foreign'] );
+				return '<p class="plk-status is-off"><b>' . esc_html__( 'Anderer Banner', 'plakette' ) . '</b> ' . esc_html( $text ) . '</p>';
+		}
+		$text = $st['known']
+			? __( 'Deine Website zeigt keinen Cookie-Banner. Ob du einen brauchst, sagt der Prüfpunkt „Kein Cookie-Banner nötig“.', 'plakette' )
+			: __( 'Der Plakette-Cookie-Banner ist ausgeschaltet. Ob ein anderer Banner läuft, zeigt die nächste Prüfung.', 'plakette' );
+		return '<p class="plk-status is-off"><b>' . esc_html__( 'Aus', 'plakette' ) . '</b> ' . esc_html( $text ) . $jump . '</p>';
 	}
 
 	private static function text( $key ) {

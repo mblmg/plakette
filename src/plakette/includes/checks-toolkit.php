@@ -69,6 +69,7 @@ class Plakette_Check_Image_Dims extends Plakette_Check {
 
 class Plakette_Check_Cdn_Files extends Plakette_Check {
 	public $id        = 'privacy_cdn';
+	public $watch     = array( 'cdn_local', 'remove_services' );
 	public $area      = 'legal';
 	public $group     = 'Fremde Server';
 	public $weight    = 6;
@@ -118,11 +119,30 @@ class Plakette_Check_Cdn_Files extends Plakette_Check {
 		if ( ! Plakette_Modules::on( 'cdn_local' ) ) {
 			return $this->fail( $detail, array( 'notes' => array_map( array( __CLASS__, 'short' ), array_slice( $urls, 0, 8 ) ) ) );
 		}
-		// Module is on, but the address is still the CDN: the download did not work (yet).
-		$notes = array();
-		foreach ( array_slice( $urls, 0, 8 ) as $url ) {
-			$why     = Plakette_Performance::fail_reason( $url );
-			$notes[] = self::short( $url ) . ( '' !== $why ? ' – ' . $why : '' );
+		// Module is on, but the address is still the CDN: the download did not work (yet) – or cannot work.
+		$notes   = array();
+		$pending = 0;
+		foreach ( $urls as $i => $url ) {
+			$why  = Plakette_Performance::fail_reason( $url );
+			$gone = Plakette_Performance::fail_permanent( $url );
+			if ( ! $gone ) {
+				++$pending;
+			}
+			if ( $i < 8 ) {
+				$notes[] = self::short( $url ) . ( '' !== $why ? ' – ' . $why : '' ) . ( $gone ? ' ' . __( '(geht nicht lokal)', 'plakette' ) : '' );
+			}
+		}
+		if ( ! $pending ) {
+			// Every remaining file failed for a reason a new try does not change: say so instead of retrying hourly.
+			return $this->warn(
+				$detail . ' ' . _n( 'Diese Datei kann Plakette nicht lokal ausliefern – der Grund steht unten. Plakette versucht es nicht mehr automatisch.', 'Diese Dateien kann Plakette nicht lokal ausliefern – die Gründe stehen unten. Plakette versucht es nicht mehr automatisch.', count( $urls ), 'plakette' ),
+				array(
+					'notes'     => $notes,
+					'risk'      => 'review',
+					'fix_label' => __( 'Trotzdem noch einmal versuchen', 'plakette' ),
+					'fix_does'  => __( 'Plakette lädt die Dateien noch einmal herunter. Hilft das nicht: Schalte im Theme oder Plugin, das die Datei lädt, die Option für das CDN ab (oft „lokal laden“ oder „Icons selbst hosten“), oder lass die Datei weg, wenn sie gar nicht gebraucht wird. Bis dahin geht beim Laden der Seite die IP-Adresse an den CDN-Betreiber.', 'plakette' ),
+				)
+			);
 		}
 		return $this->warn(
 			$detail . ' ' . __( 'Lokales Ausliefern ist eingeschaltet, aber diese Dateien konnten noch nicht heruntergeladen werden. Bis es klappt, bleibt die CDN-Adresse (die Seite funktioniert weiter); Plakette versucht es stündlich erneut.', 'plakette' ),
@@ -154,11 +174,14 @@ class Plakette_Check_Cdn_Files extends Plakette_Check {
 			foreach ( $failed as $u => $why ) {
 				$list[] = $u . ' (' . $why . ')';
 			}
+			$gone = array_filter( $urls, array( 'Plakette_Performance', 'fail_permanent' ) );
 			return sprintf(
 				/* translators: %s: list of files */
-				__( 'Eingeschaltet. Noch nicht heruntergeladen: %s. Bis dahin bleibt die CDN-Adresse, Plakette versucht es stündlich erneut.', 'plakette' ),
+				__( 'Eingeschaltet. Nicht heruntergeladen: %s.', 'plakette' ),
 				implode( ', ', $list )
-			);
+			) . ' ' . ( count( $gone ) === count( $failed )
+				? __( 'Das lässt sich mit einem neuen Versuch nicht beheben – Plakette versucht es nicht automatisch erneut.', 'plakette' )
+				: __( 'Bis dahin bleibt die CDN-Adresse, Plakette versucht es stündlich erneut.', 'plakette' ) );
 		}
 		return __( 'Die Dateien kommen jetzt von deinem eigenen Server.', 'plakette' );
 	}

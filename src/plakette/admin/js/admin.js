@@ -26,7 +26,17 @@
 		measuring: false,
 		forms: {}, // scope ('check:<id>' | 'set:<section>') → { key: value }
 		openSettings: new Set(),
+		view: 'bericht', // bericht | messungen | statistik | protokoll | einstellungen
+		logAll: false,
 	};
+
+	const VIEWS = [
+		[ 'bericht', 'Mängel' ],
+		[ 'messungen', 'Messungen' ],
+		[ 'statistik', 'Statistik' ],
+		[ 'protokoll', 'Protokoll' ],
+		[ 'einstellungen', 'Einstellungen' ],
+	];
 
 	/* ------------------------------------------------------------ helpers */
 
@@ -188,6 +198,13 @@
 
 	function header() {
 		const r = S.report;
+		if ( r && ui.view !== 'bericht' && ui.busy !== 'audit' ) {
+			const n = checks().filter( ( c ) => c.status === 'fail' || c.status === 'warn' ).length;
+			return `<header class="plk-head is-compact"><button class="plk-mini" data-action="view" data-view="bericht" aria-label="Zum Prüfbericht: ${ r.scores.total } von 100 Punkten">${ plakette() }</button><div class="plk-head-text">
+				<p class="plk-kicker">Prüfbericht für ${ esc( r.name || r.site ) } vom ${ esc( new Date( r.time * 1000 ).toLocaleDateString( 'de-DE', { day: 'numeric', month: 'long', year: 'numeric' } ) ) }</p>
+				<p class="plk-compact-line"><b>${ r.scores.total } von 100 Punkten</b>, ${ n ? `<button class="plk-link" data-action="view" data-view="bericht">${ plural( n, 'offener Punkt', 'offene Punkte' ) }</button>` : 'keine offenen Punkte' }</p>
+			</div></header>`;
+		}
 		if ( ui.busy === 'audit' ) {
 			return `<header class="plk-head">${ plakette() }<div class="plk-head-text">
 				<h2 class="plk-title">Prüfung läuft …</h2>
@@ -237,11 +254,55 @@
 			<div class="plk-actions">
 				${ safe.length ? `<button class="plk-btn is-primary" data-action="fix-all" ${ ui.busy ? 'disabled' : '' }>${ plural( safe.length, 'sichere Korrektur', 'sichere Korrekturen' ) } anwenden</button>` : '' }
 				<button class="plk-btn" data-action="audit" ${ ui.busy ? 'disabled' : '' }>Neu prüfen</button>
+				<button class="plk-btn is-quiet" data-action="view" data-view="einstellungen">Einstellungen</button>
 			</div>
 			${ ui.busy === 'all' ? `<p class="plk-progress-text" role="status">${ esc( ui.progress ) }</p>` : '' }
 			${ safe.length && ! ui.busy ? `<p class="plk-hint">„Sicher“ heißt: Diese Änderungen passen für fast jede Website und lassen sich im Protokoll rückgängig machen. Punkte, die du dir vorher ansehen solltest, sind nicht dabei.</p>` : '' }
 			${ ui.error ? `<p class="plk-error" role="alert">${ esc( ui.error ) }</p>` : '' }
 		</div></header>`;
+	}
+
+	/* ------------------------------------------------------------ views */
+
+	function nav() {
+		if ( ! S.report || ui.busy === 'audit' ) {
+			return '';
+		}
+		const open = checks().filter( ( c ) => c.status === 'fail' || c.status === 'warn' ).length;
+		const runs = ( S.log || [] ).length;
+		const count = { bericht: open, protokoll: runs };
+		const items = VIEWS.filter( ( [ key ] ) => key !== 'statistik' || S.stats ).map( ( [ key, label ] ) => {
+			const n = count[ key ];
+			return `<a class="plk-nav-item" href="#${ key }" data-action="view" data-view="${ key }"${ ui.view === key ? ' aria-current="page"' : '' }>${ label }${ n ? ` <span class="plk-count">${ n }</span>` : '' }</a>`;
+		} ).join( '' );
+		return `<nav class="plk-nav" aria-label="Plakette"><div class="plk-nav-track">${ items }</div></nav>`;
+	}
+
+	function setView( view, opts ) {
+		opts = opts || {};
+		if ( ! VIEWS.some( ( [ k ] ) => k === view ) || ( view === 'statistik' && ! S.stats ) ) {
+			view = 'bericht';
+		}
+		if ( ( ui.measuring || ui.probing ) && view !== ui.view ) {
+			toast( 'Die Messung läuft noch – bitte warte, bis sie fertig ist.' );
+			return;
+		}
+		const changed = ui.view !== view;
+		ui.view = view;
+		if ( ! opts.keepHash ) {
+			const hash = '#' + view + ( opts.section ? '-' + opts.section : '' );
+			if ( window.location.hash !== hash ) {
+				history.pushState( null, '', hash );
+			}
+		}
+		render();
+		if ( changed && ! opts.noScroll ) {
+			const navEl = app.querySelector( '.plk-nav' );
+			const top = navEl ? navEl.getBoundingClientRect().top + window.scrollY - 40 : 0;
+			if ( window.scrollY > top ) {
+				window.scrollTo( 0, Math.max( 0, top ) );
+			}
+		}
 	}
 
 	/* ------------------------------------------------------------ instruments */
@@ -400,6 +461,10 @@
 	}
 
 	function body( c ) {
+		return bodyInner( c ) + ignoredList( c );
+	}
+
+	function bodyInner( c ) {
 		const k = kindOf( c );
 		let html = `<div class="plk-explain"><p>${ esc( c.explain ) }</p>`;
 		if ( c.notes && c.notes.length ) {
@@ -470,11 +535,14 @@
 				<div class="plk-item-main">
 					<div class="plk-item-label">${ esc( it.label ) }${ it.link ? ` <a href="${ esc( it.link ) }" target="_blank" rel="noopener">ansehen<span class="screen-reader-text"> (neues Fenster)</span></a>` : '' }${ it.edit ? ` <a href="${ esc( it.edit ) }" target="_blank" rel="noopener">bearbeiten<span class="screen-reader-text"> (neues Fenster)</span></a>` : '' }</div>
 					<div class="plk-item-sub">${ esc( it.sub || '' ) }</div>
+					${ where( it ) }
 					${ input }
 				</div>
+				${ c.ignorable ? `<button class="plk-btn is-small is-quiet plk-item-ignore" data-action="ignore" data-id="${ esc( c.id ) }" data-item="${ esc( it.id ) }" data-label="${ esc( it.label ) }" ${ ui.busy ? 'disabled' : '' }>Ignorieren<span class="screen-reader-text">: ${ esc( it.label ) }</span></button>` : '' }
 			</li>`;
 		} ).join( '' );
 		return `<div class="plk-items">
+			${ c.ignorable ? '<p class="plk-help">Kein echter Mangel? Mit „Ignorieren“ nimmst du ein Bild aus der Liste – es zählt dann nicht mehr. Unten kannst du das jederzeit zurücknehmen.</p>' : '' }
 			${ f ? `<p class="plk-items-field">${ esc( f.label ) }</p>` : '' }
 			<ul>${ lis }</ul>
 			<div class="plk-items-foot">
@@ -483,6 +551,25 @@
 				<button class="plk-btn is-primary" data-action="fix" data-id="${ esc( c.id ) }" ${ disabled || ! selected ? 'disabled' : '' }>${ esc( c.fix_label ) } (${ selected })</button>
 			</div>
 		</div>`;
+	}
+
+	/** "Verwendet auf: Kontakt (ansehen, bearbeiten)" for an item. */
+	function where( it ) {
+		const list = it.where || [];
+		if ( ! list.length ) {
+			return '';
+		}
+		const nw = '<span class="screen-reader-text"> (neues Fenster)</span>';
+		return `<div class="plk-item-where">Verwendet auf: ${ list.map( ( w ) => `<span class="plk-where">${ w.url ? `<a href="${ esc( w.url ) }" target="_blank" rel="noopener">${ esc( w.label ) }${ nw }</a>` : esc( w.label ) }${ w.edit ? ` <a class="plk-where-edit" href="${ esc( w.edit ) }" target="_blank" rel="noopener">bearbeiten<span class="screen-reader-text">: ${ esc( w.label ) }</span>${ nw }</a>` : '' }</span>` ).join( '' ) }</div>`;
+	}
+
+	/** Items the user took out of a check, with a way back. */
+	function ignoredList( c ) {
+		const list = c.ignored || [];
+		if ( ! list.length ) {
+			return '';
+		}
+		return `<details class="plk-ignored"><summary>Ausgenommen (${ list.length })</summary><ul>${ list.map( ( it ) => `<li><span>${ esc( it.label ) }</span> <button class="plk-btn is-small is-quiet" data-action="unignore" data-id="${ esc( c.id ) }" data-item="${ esc( it.id ) }" data-label="${ esc( it.label ) }" ${ ui.busy ? 'disabled' : '' }>Wieder prüfen</button></li>` ).join( '' ) }</ul></details>`;
 	}
 
 	/* ------------------------------------------------------------ fields (forms in checks and settings) */
@@ -538,8 +625,9 @@
 			const scope = 'set:' + sec.id;
 			const vals = formValues( scope, sec.fields );
 			const open = ui.openSettings.has( sec.id );
-			return `<div class="plk-set${ open ? ' is-open' : '' }">
-				<h3><button class="plk-fold" aria-expanded="${ open }" data-action="settings-toggle" data-id="${ esc( sec.id ) }">${ esc( sec.title ) }</button></h3>
+			const badge = sec.badge ? `<span class="plk-badge is-${ esc( sec.badge[ 1 ] ) }">${ esc( sec.badge[ 0 ] ) }</span>` : '';
+			return `<div class="plk-set${ open ? ' is-open' : '' }" id="plk-set-${ esc( sec.id ) }">
+				<h3><button class="plk-fold" aria-expanded="${ open }" data-action="settings-toggle" data-id="${ esc( sec.id ) }"><span>${ esc( sec.title ) }</span>${ badge }</button></h3>
 				${ open ? `<div class="plk-set-body">${ sec.desc ? `<p class="plk-panel-note">${ esc( sec.desc ) }</p>` : '' }
 					${ sec.id === 'general' ? `<p class="plk-update">${ upText } <button class="plk-btn is-small is-quiet" data-action="update-check" ${ ui.busy ? 'disabled' : '' }>Jetzt nachsehen</button> <a href="${ esc( up.repo || '#' ) }" target="_blank" rel="noopener">GitHub<span class="screen-reader-text"> (neues Fenster)</span></a></p>` : '' }
 					<div class="plk-fields">${ sec.fields.map( ( f ) => fieldHtml( scope, f, vals[ f.key ] ) ).join( '' ) }</div>
@@ -549,6 +637,7 @@
 		} ).join( '' );
 		return `<section class="plk-panel plk-settings" aria-labelledby="plk-set-h">
 			<div class="plk-panel-head"><h2 id="plk-set-h">Einstellungen</h2></div>
+			<p class="plk-panel-note">Was Plakette für deine Website tun soll. Jeder Bereich speichert für sich.</p>
 			${ blocks }
 		</section>`;
 	}
@@ -565,7 +654,7 @@
 					delete ui.forms[ k ];
 				}
 			} );
-			toast( res.message || 'Gespeichert.' );
+			toast( ( res.message || 'Gespeichert.' ) + alsoText( res.also ) );
 		} catch ( e ) {
 			toast( e.message, null, true );
 		}
@@ -592,7 +681,9 @@
 		if ( ! S.report ) {
 			return '';
 		}
-		const items = runs.map( ( r ) => {
+		const LIMIT = 15;
+		const shown = ui.logAll ? runs : runs.slice( 0, LIMIT );
+		const items = shown.map( ( r ) => {
 			const d = new Date( r.created.replace( ' ', 'T' ) );
 			const time = isNaN( d ) ? r.created : d.toLocaleDateString( 'de-DE', { day: 'numeric', month: 'short' } ) + ', ' + d.toLocaleTimeString( 'de-DE', { hour: '2-digit', minute: '2-digit' } );
 			const action = r.undone
@@ -605,7 +696,7 @@
 		return `<section class="plk-panel plk-log" aria-labelledby="plk-log-h">
 			<div class="plk-panel-head"><h2 id="plk-log-h">Protokoll</h2></div>
 			<p class="plk-panel-note">Jede Änderung, die Plakette vornimmt, steht hier. Mit „Rückgängig“ stellst du den vorherigen Zustand wieder her.</p>
-			${ runs.length ? `<ol class="plk-log-list">${ items }</ol>` : '<p class="plk-empty">Noch keine Änderungen. Sobald du einen Mangel behebst, erscheint er hier.</p>' }
+			${ runs.length ? `<ol class="plk-log-list">${ items }</ol>${ runs.length > LIMIT && ! ui.logAll ? `<p class="plk-more"><button class="plk-btn is-quiet" data-action="log-all">Alle ${ runs.length } Einträge zeigen</button></p>` : '' }` : '<p class="plk-empty">Noch keine Änderungen. Sobald du einen Mangel behebst, erscheint er hier.</p>' }
 		</section>`;
 	}
 
@@ -645,7 +736,25 @@
 	function render() {
 		const focusId = document.activeElement && document.activeElement.id;
 		const focusAction = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.action + '|' + ( document.activeElement.dataset.id || '' ) : '';
-		app.innerHTML = header() + instruments() + privacyPanel() + list() + statsPanel() + logSection() + settingsSection();
+		let main = '';
+		if ( ! S.report || ui.busy === 'audit' ) {
+			main = ui.view === 'einstellungen' && S.report ? settingsSection() : '';
+		} else if ( ui.view === 'messungen' ) {
+			main = instruments() + privacyPanel();
+		} else if ( ui.view === 'statistik' ) {
+			main = statsPanel();
+		} else if ( ui.view === 'protokoll' ) {
+			main = logSection();
+		} else if ( ui.view === 'einstellungen' ) {
+			main = settingsSection();
+		} else {
+			main = list();
+		}
+		if ( ! S.report && ui.busy !== 'audit' ) {
+			// Before the first audit: the settings (company data …) are still reachable.
+			main = `<p class="plk-pre-settings"><button class="plk-btn is-quiet" data-action="view" data-view="${ ui.view === 'einstellungen' ? 'bericht' : 'einstellungen' }">${ ui.view === 'einstellungen' ? 'Einstellungen schließen' : 'Einstellungen öffnen' }</button></p>` + ( ui.view === 'einstellungen' ? settingsSection() : '' );
+		}
+		app.innerHTML = header() + nav() + `<div class="plk-view" id="plk-view">${ main }</div>`;
 		let target = focusId ? document.getElementById( focusId ) : null;
 		if ( ! target && focusAction ) {
 			const [ a, id ] = focusAction.split( '|' );
@@ -690,12 +799,39 @@
 				.filter( ( it ) => ( opts.allItems ? true : d.items[ it.id ] && d.items[ it.id ].checked ) )
 				.map( ( it ) => ( { id: it.id, value: d.items[ it.id ] ? d.items[ it.id ].value : it.value || '' } ) );
 			const size = c.batch || 50;
+			const messages = [];
+			let lastError = null;
 			for ( let i = 0; i < picked.length; i += size ) {
 				if ( picked.length > size ) {
 					ui.progress = ( opts.prefix || '' ) + `${ c.fix_label }: ${ Math.min( i + size, picked.length ) } von ${ picked.length }`;
 					updateProgress();
+					const w = app.querySelector( '.plk-working' );
+					if ( w ) {
+						w.textContent = ui.progress;
+					}
 				}
-				result = await api( '/fix', 'POST', { check: c.id, run, items: picked.slice( i, i + size ), refresh: i + size >= picked.length } );
+				const last = i + size >= picked.length;
+				try {
+					// One failing batch (e.g. images that cannot get smaller) must not stop the others.
+					result = await api( '/fix', 'POST', { check: c.id, run, items: picked.slice( i, i + size ), refresh: last } );
+					messages.push( result.message );
+				} catch ( e ) {
+					lastError = e;
+					messages.push( e.message );
+					if ( last ) {
+						// The last batch refreshes the report – do it now that it failed.
+						result = await api( '/report', 'GET' ).catch( () => null );
+						if ( result ) {
+							result.message = '';
+						}
+					}
+				}
+			}
+			if ( result && picked.length > size ) {
+				result.message = messages.filter( Boolean ).join( ' ' );
+			}
+			if ( lastError && ( ! result || messages.every( ( m ) => m === lastError.message ) ) ) {
+				throw lastError;
 			}
 		} else {
 			const body = { check: c.id, run };
@@ -738,7 +874,7 @@
 		try {
 			const res = await applyFix( c );
 			const after = byId( id );
-			toast( res.message, { run: res.run, check: id } );
+			toast( res.message + alsoText( res.also ), { run: res.run, check: id } );
 			if ( after && after.status === 'pass' ) {
 				ui.opened.delete( id );
 				ui.closed.delete( id );
@@ -748,6 +884,35 @@
 		}
 		ui.busy = null;
 		render();
+	}
+
+	/** " Damit auch aktualisiert: …" – other checks the change settled or changed. */
+	function alsoText( also ) {
+		if ( ! also || ! also.length ) {
+			return '';
+		}
+		const word = ( a ) => ( a.status === 'pass' ? 'jetzt in Ordnung' : a.status === 'skip' ? 'nicht mehr geprüft' : 'neu bewertet' );
+		return ' Damit auch aktualisiert: ' + also.map( ( a ) => `${ a.title } (${ word( a ) })` ).join( ', ' ) + '.';
+	}
+
+	async function ignoreItem( id, item, label, on ) {
+		ui.busy = 'ignore';
+		render();
+		try {
+			const res = await api( '/ignore', 'POST', { check: id, item, label, on } );
+			setState( res );
+			delete ui.drafts[ id ];
+			toast( res.message );
+		} catch ( e ) {
+			toast( e.message, null, true );
+		}
+		ui.busy = null;
+		render();
+		// The check may have moved (e.g. to „In Ordnung“ when nothing is left): keep it in sight, open.
+		const btn = document.createElement( 'button' );
+		btn.dataset.action = 'jump';
+		btn.dataset.id = id;
+		onClick( { target: btn } );
 	}
 
 	async function fixAll() {
@@ -790,7 +955,7 @@
 		try {
 			const res = await api( '/undo', 'POST', { run, check } );
 			setState( res );
-			toast( res.message, null, res.ok === false );
+			toast( res.message + alsoText( res.also ), null, res.ok === false );
 		} catch ( e ) {
 			toast( e.message, null, true );
 		}
@@ -1202,6 +1367,14 @@
 			} else if ( input ) {
 				input.focus();
 			}
+		} else if ( a === 'view' ) {
+			e.preventDefault && e.preventDefault();
+			setView( t.dataset.view );
+		} else if ( a === 'log-all' ) {
+			ui.logAll = true;
+			render();
+		} else if ( a === 'ignore' || a === 'unignore' ) {
+			ignoreItem( id, t.dataset.item, t.dataset.label || '', a === 'ignore' );
 		} else if ( a === 'save-settings' ) {
 			saveSettings( id );
 		} else if ( a === 'update-check' ) {
@@ -1212,6 +1385,7 @@
 			} else {
 				ui.openSettings.add( id );
 			}
+			history.replaceState( null, '', '#einstellungen' + ( ui.openSettings.has( id ) ? '-' + id : '' ) );
 			render();
 		} else if ( a === 'copy' ) {
 			copyLetter( id );
@@ -1254,6 +1428,10 @@
 				return;
 			}
 			ui.filter = 'all';
+			if ( ui.view !== 'bericht' ) {
+				ui.view = 'bericht';
+				history.pushState( null, '', '#plk-row-' + id );
+			}
 			if ( c.status === 'pass' ) {
 				ui.showPass = true;
 			}
@@ -1318,17 +1496,37 @@
 		}
 	}
 
-	// Links from the dashboard widget / notices: admin.php?page=plakette#plk-row-<id> opens and shows that row.
+	// Links from the dashboard widget / notices: admin.php?page=plakette#plk-row-<id> opens and shows that row;
+	// #messungen, #protokoll, #einstellungen, #einstellungen-<section> open a view (back button works).
 	function jumpToHash() {
-		const m = /^#plk-row-([a-z0-9_]+)$/.exec( window.location.hash || '' );
+		const hash = window.location.hash || '';
+		const m = /^#plk-row-([a-z0-9_]+)$/.exec( hash );
 		if ( m && byId( m[ 1 ] ) ) {
+			ui.view = 'bericht';
 			const btn = document.createElement( 'button' );
 			btn.dataset.action = 'jump';
 			btn.dataset.id = m[ 1 ];
 			onClick( { target: btn } );
+			return;
+		}
+		const v = /^#([a-z]+)(?:-([a-z0-9_]+))?$/.exec( hash );
+		if ( v && VIEWS.some( ( [ k ] ) => k === v[ 1 ] ) ) {
+			if ( v[ 1 ] === 'einstellungen' && v[ 2 ] ) {
+				ui.openSettings.add( v[ 2 ] );
+			}
+			setView( v[ 1 ], { keepHash: true, noScroll: true } );
+			if ( v[ 2 ] ) {
+				const el = document.getElementById( 'plk-set-' + v[ 2 ] );
+				if ( el ) {
+					el.scrollIntoView( { block: 'start' } );
+				}
+			}
+		} else if ( ! hash && ui.view !== 'bericht' ) {
+			setView( 'bericht', { keepHash: true, noScroll: true } );
 		}
 	}
 	window.addEventListener( 'hashchange', jumpToHash );
+	window.addEventListener( 'popstate', jumpToHash );
 	setTimeout( jumpToHash, 0 );
 
 	app.addEventListener( 'click', onClick );

@@ -37,6 +37,11 @@ abstract class Plakette_Check {
 	public $undoable = true;
 	/** @var string Warning shown for fixes that cannot be undone (default: about deleted data). */
 	public $undo_note = '';
+	/**
+	 * @var string[] Module keys (Plakette_Modules) this check depends on in addition to the ones its run() reads.
+	 * When a fix or an undo changes one of them, the check is evaluated again at once (Plakette_Auditor::refresh_related()).
+	 */
+	public $watch = array();
 	/** @var int Items per request for item fixes. */
 	public $batch = 50;
 
@@ -73,6 +78,42 @@ abstract class Plakette_Check {
 			'undoable'  => $this->undoable,
 			'undo_note' => $this->undo_note,
 		);
+	}
+
+	/* Items the user excluded („Falschbefund – ignorieren“), per check: item id => label. */
+
+	const IGNORED = 'plakette_ignored';
+
+	/** @return array item id => label */
+	public function ignored() {
+		$all = get_option( self::IGNORED, array() );
+		return is_array( $all ) && isset( $all[ $this->id ] ) && is_array( $all[ $this->id ] ) ? $all[ $this->id ] : array();
+	}
+
+	/** For the result: the list under „Ausgenommen“ with a button to take each back in. */
+	public function ignored_list() {
+		$out = array();
+		foreach ( $this->ignored() as $id => $label ) {
+			$out[] = array(
+				'id'    => (string) $id,
+				'label' => (string) $label,
+			);
+		}
+		return $out;
+	}
+
+	public static function set_ignored( $check, $item, $label, $on ) {
+		$all = get_option( self::IGNORED, array() );
+		$all = is_array( $all ) ? $all : array();
+		if ( $on ) {
+			$all[ $check ][ $item ] = '' !== $label ? $label : $item;
+		} else {
+			unset( $all[ $check ][ $item ] );
+			if ( empty( $all[ $check ] ) ) {
+				unset( $all[ $check ] );
+			}
+		}
+		update_option( self::IGNORED, $all, false );
 	}
 
 	/* Helpers for subclasses. */

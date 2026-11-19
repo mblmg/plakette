@@ -40,6 +40,7 @@ class Plakette_Stats {
 	public static function settings_section( $sections ) {
 		$sections['stats'] = array(
 			'title'  => __( 'Besucherstatistik', 'plakette' ),
+			'badge'  => self::active() ? array( __( 'Zählt', 'plakette' ), 'on' ) : array( __( 'Aus', 'plakette' ), 'off' ),
 			'desc'   => __( 'Die Plakette-Statistik zählt Seitenaufrufe ohne Cookies, ohne IP-Adressen und ohne Wiedererkennung von Besuchern – deshalb braucht sie keine Einwilligung und keinen Cookie-Banner. Du siehst Aufrufe pro Tag, die meistgelesenen Seiten, die Herkunft der Besucher und die Geräte. Die Auswertung erscheint oben auf dieser Seite im Abschnitt „Besucher – Plakette-Statistik“.', 'plakette' ),
 			'fields' => array(
 				array(

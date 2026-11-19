@@ -597,8 +597,13 @@ class Plakette_Performance {
 			return $local;
 		}
 		$state = self::state();
-		if ( ! $force && ! empty( $state['fail'][ $key ]['time'] ) && time() - (int) $state['fail'][ $key ]['time'] < self::RETRY_AFTER ) {
-			return null;
+		if ( ! $force && ! empty( $state['fail'][ $key ]['time'] ) ) {
+			// Network trouble: next try after an hour. A file that cannot work locally (404, HTML, @import …): only
+			// when the user asks again, or after 30 days.
+			$wait = empty( $state['fail'][ $key ]['permanent'] ) ? self::RETRY_AFTER : self::MAX_AGE;
+			if ( time() - (int) $state['fail'][ $key ]['time'] < $wait ) {
+				return null;
+			}
 		}
 		return true === self::fetch_asset( $src ) ? $local : null;
 	}
@@ -613,14 +618,17 @@ class Plakette_Performance {
 	/** Downloads one CDN file (atomic, with content checks) and registers it. @return true|string reason */
 	public static function fetch_asset( $src ) {
 		list( $key, $name, $dir ) = self::asset_paths( $src );
-		$res   = wp_remote_get( $src, array( 'timeout' => 10, 'redirection' => 3 ) );
-		$ok    = ! is_wp_error( $res ) && 200 === (int) wp_remote_retrieve_response_code( $res );
-		$body  = $ok ? (string) wp_remote_retrieve_body( $res ) : '';
-		$type  = $ok ? strtolower( (string) wp_remote_retrieve_header( $res, 'content-type' ) ) : '';
-		$is_js = (bool) preg_match( '#\.m?js$#i', $name );
-		$why   = '';
+		$res       = wp_remote_get( $src, array( 'timeout' => 10, 'redirection' => 3 ) );
+		$code      = is_wp_error( $res ) ? 0 : (int) wp_remote_retrieve_response_code( $res );
+		$ok        = 200 === $code;
+		$body      = $ok ? (string) wp_remote_retrieve_body( $res ) : '';
+		$type      = $ok ? strtolower( (string) wp_remote_retrieve_header( $res, 'content-type' ) ) : '';
+		$is_js     = (bool) preg_match( '#\.m?js$#i', $name );
+		$why       = '';
+		$permanent = true; // Only network trouble, server errors and a full disk are worth another try later.
 		if ( ! $ok ) {
-			$why = is_wp_error( $res ) ? $res->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $res );
+			$why       = is_wp_error( $res ) ? $res->get_error_message() : 'HTTP ' . $code;
+			$permanent = ! is_wp_error( $res ) && $code >= 400 && $code < 500 && ! in_array( $code, array( 408, 425, 429 ), true );
 		} elseif ( '' === $body || strlen( $body ) > self::MAX_BYTES ) {
 			$why = __( 'leer oder zu groß', 'plakette' );
 		} elseif ( 0 === strpos( ltrim( $body ), '<' ) ) {
@@ -629,11 +637,19 @@ class Plakette_Performance {
 			$why = sprintf( __( 'falscher Inhaltstyp %s', 'plakette' ), $type );
 		} elseif ( ! $is_js && $type && false === strpos( $type, 'css' ) && false === strpos( $type, 'text/plain' ) ) {
 			$why = sprintf( __( 'falscher Inhaltstyp %s', 'plakette' ), $type );
-		} elseif ( ! $is_js && preg_match( '#url\(\s*[\'"]?(?!data:|https?:|//)#i', $body ) ) {
-			$why = __( 'CSS mit relativen url()-Verweisen', 'plakette' );
+		} elseif ( ! $is_js ) {
+			// Fonts and images the stylesheet points to (foundation-icons.css → foundation-icons.woff …) come along.
+			$css = self::localise_css( $body, $src, $dir, $key );
+			if ( is_array( $css ) ) {
+				$why       = $css[0];
+				$permanent = $css[1];
+			} else {
+				$body = $css;
+			}
 		}
 		$state = self::state();
 		if ( '' === $why ) {
+			clearstatcache( true, $dir );
 			if ( wp_mkdir_p( $dir ) ) {
 				$tmp = $dir . '/.' . $name . '.tmp';
 				if ( false !== file_put_contents( $tmp, $body ) && rename( $tmp, $dir . '/' . $name ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions
@@ -656,15 +672,158 @@ class Plakette_Performance {
 				if ( file_exists( $tmp ) ) {
 					wp_delete_file( $tmp );
 				}
+				$why = __( 'Datei im Upload-Ordner nicht schreibbar', 'plakette' );
+			} else {
+				$why = __( 'Upload-Ordner nicht beschreibbar', 'plakette' );
 			}
-			$why = __( 'Upload-Ordner nicht beschreibbar', 'plakette' );
+			$permanent = false;
 		}
-		$state['fail'][ $key ] = array( 'time' => time(), 'why' => $why, 'src' => $src );
+		$state['fail'][ $key ] = array(
+			'time'      => time(),
+			'why'       => $why,
+			'src'       => $src,
+			'permanent' => $permanent,
+		);
 		update_option( self::STATE, $state, false );
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 			error_log( 'Plakette (CDN lokal): nicht übernommen (' . $why . '): ' . $src ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions
 		}
 		return $why;
+	}
+
+	/** File types a stylesheet may point to that Plakette copies along. */
+	const CSS_ASSET_EXT = 'woff2?|ttf|otf|eot|svg|png|jpe?g|gif|webp|avif|cur';
+
+	/**
+	 * Copies the files a CDN stylesheet points to (relative url() or the same public CDN) into a folder next to it
+	 * and rewrites the addresses. Files on other servers stay as they are.
+	 *
+	 * @return string|array rewritten CSS, or [ reason, permanent ] when that is not possible
+	 */
+	public static function localise_css( $css, $src, $dir, $key ) {
+		if ( preg_match( '#@import\s#i', $css ) ) {
+			return array( __( 'lädt weitere Stylesheets nach (@import)', 'plakette' ), true );
+		}
+		if ( ! preg_match_all( '#url\(\s*([\'"]?)([^\'")]+)\1\s*\)#i', $css, $mm, PREG_SET_ORDER ) ) {
+			return $css;
+		}
+		$u       = wp_get_upload_dir();
+		$sub     = $key . '-assets';
+		$folder  = $dir . '/' . $sub;
+		$base    = trailingslashit( $u['baseurl'] ) . self::DIR_NAME . '/' . $sub . '/';
+		$map     = array();
+		$names   = array();
+		$total   = 0;
+		foreach ( $mm as $m ) {
+			$ref = trim( $m[2] );
+			if ( '' === $ref || isset( $map[ $ref ] ) || preg_match( '#^(data:|\#|about:)#i', $ref ) ) {
+				continue;
+			}
+			$abs  = self::resolve_url( $ref, $src );
+			$host = strtolower( (string) wp_parse_url( $abs, PHP_URL_HOST ) );
+			if ( '' === $host || ! in_array( $host, self::cdn_hosts(), true ) ) {
+				continue; // another server – not ours to copy
+			}
+			$path = (string) wp_parse_url( $abs, PHP_URL_PATH );
+			if ( ! preg_match( '#\.(' . self::CSS_ASSET_EXT . ')$#i', $path ) ) {
+				/* translators: %s: file name */
+				return array( sprintf( __( 'verweist auf eine Datei, die Plakette nicht kopiert (%s)', 'plakette' ), wp_basename( $path ) ), true );
+			}
+			if ( count( $names ) >= 40 ) {
+				return array( __( 'verweist auf mehr als 40 Dateien', 'plakette' ), true );
+			}
+			$fetch = rtrim( (string) strtok( $abs, '#' ), '?' );
+			$tail  = (string) substr( $ref, strcspn( $ref, '?#' ) );
+			$known = array_search( $fetch, $names, true );
+			if ( false !== $known ) {
+				$map[ $ref ] = $base . $known . $tail;
+				continue;
+			}
+			$res   = wp_remote_get( $fetch, array( 'timeout' => 10, 'redirection' => 3 ) );
+			$code  = is_wp_error( $res ) ? 0 : (int) wp_remote_retrieve_response_code( $res );
+			$data  = 200 === $code ? (string) wp_remote_retrieve_body( $res ) : '';
+			if ( 200 !== $code ) {
+				$why = is_wp_error( $res ) ? $res->get_error_message() : 'HTTP ' . $code;
+				/* translators: 1: file name, 2: reason */
+				return array( sprintf( __( '%1$s nicht ladbar (%2$s)', 'plakette' ), wp_basename( $path ), $why ), ! is_wp_error( $res ) && $code >= 400 && $code < 500 && 429 !== $code );
+			}
+			$is_svg = (bool) preg_match( '#\.svg$#i', $path );
+			if ( '' === $data || ( ! $is_svg && 0 === strpos( ltrim( $data ), '<' ) ) || ( $is_svg && ! preg_match( '#<svg\b#i', $data ) ) ) {
+				/* translators: %s: file name */
+				return array( sprintf( __( '%s ist keine gültige Datei', 'plakette' ), wp_basename( $path ) ), true );
+			}
+			$total += strlen( $data );
+			if ( $total > self::MAX_BYTES * 4 ) {
+				return array( __( 'die verwendeten Dateien sind zusammen zu groß', 'plakette' ), true );
+			}
+			$file = preg_replace( '#[^a-zA-Z0-9._-]+#', '-', wp_basename( $path ) );
+			if ( isset( $names[ $file ] ) && $names[ $file ] !== $fetch ) {
+				$file = substr( md5( $fetch ), 0, 6 ) . '-' . $file;
+			}
+			$names[ $file ] = $fetch;
+			if ( ! wp_mkdir_p( $folder ) || false === file_put_contents( $folder . '/' . $file, $data ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions
+				return array( __( 'Upload-Ordner nicht beschreibbar', 'plakette' ), false );
+			}
+			// Keep "?#iefix" and "#icons" – old browsers and SVG fonts need them.
+			$map[ $ref ] = $base . $file . $tail;
+		}
+		if ( ! $map ) {
+			return $css;
+		}
+		$out = preg_replace_callback(
+			'#url\(\s*([\'"]?)([^\'")]+)\1\s*\)#i',
+			function ( $m ) use ( $map ) {
+				$ref = trim( $m[2] );
+				return isset( $map[ $ref ] ) ? 'url("' . $map[ $ref ] . '")' : $m[0];
+			},
+			$css
+		);
+		return null === $out ? array( __( 'CSS ließ sich nicht umschreiben', 'plakette' ), true ) : $out;
+	}
+
+	/** Absolute address of $ref found in the file $base. */
+	public static function resolve_url( $ref, $base ) {
+		if ( preg_match( '#^https?://#i', $ref ) ) {
+			return $ref;
+		}
+		if ( 0 === strpos( $ref, '//' ) ) {
+			return 'https:' . $ref;
+		}
+		$p    = wp_parse_url( $base );
+		$root = ( $p['scheme'] ?? 'https' ) . '://' . ( $p['host'] ?? '' );
+		if ( 0 === strpos( $ref, '/' ) ) {
+			return $root . $ref;
+		}
+		$dir   = preg_replace( '#/[^/]*$#', '/', (string) ( $p['path'] ?? '/' ) );
+		$path  = $dir . strtok( $ref, '?#' );
+		$parts = array();
+		foreach ( explode( '/', $path ) as $seg ) {
+			if ( '..' === $seg ) {
+				array_pop( $parts );
+			} elseif ( '.' !== $seg ) {
+				$parts[] = $seg;
+			}
+		}
+		$q = (string) substr( $ref, strcspn( $ref, '?#' ) );
+		return $root . implode( '/', $parts ) . $q;
+	}
+
+	/** CDN addresses that cannot be served locally. @return string[] */
+	public static function blocked_files() {
+		$out = array();
+		foreach ( self::state()['fail'] as $f ) {
+			if ( is_array( $f ) && ! empty( $f['permanent'] ) && ! empty( $f['src'] ) ) {
+				$out[] = (string) $f['src'];
+			}
+		}
+		return $out;
+	}
+
+	/** Did the download of $url fail for good (no automatic retries)? */
+	public static function fail_permanent( $url ) {
+		list( $key ) = self::asset_paths( self::normalise( $url ) );
+		$state       = self::state();
+		return ! empty( $state['fail'][ $key ]['permanent'] );
 	}
 
 	/** Notes usage (for the cleanup). Writes at most once a day per file. */
@@ -716,12 +875,14 @@ class Plakette_Performance {
 				if ( is_file( $dir . '/' . $f['file'] ) ) {
 					wp_delete_file( $dir . '/' . $f['file'] );
 				}
+				Plakette_Log::rrmdir( $dir . '/' . $key . '-assets' );
 				unset( $state['files'][ $key ] );
 				++$n;
 			}
 		}
 		foreach ( $state['fail'] as $key => $f ) {
-			if ( time() - (int) ( is_array( $f ) && isset( $f['time'] ) ? $f['time'] : 0 ) > DAY_IN_SECONDS ) {
+			$keep = is_array( $f ) && ! empty( $f['permanent'] ) ? self::MAX_AGE : DAY_IN_SECONDS;
+			if ( time() - (int) ( is_array( $f ) && isset( $f['time'] ) ? $f['time'] : 0 ) > $keep ) {
 				unset( $state['fail'][ $key ] );
 				++$n;
 			}
@@ -734,8 +895,14 @@ class Plakette_Performance {
 
 	/** Undo: deletes every local CDN copy. */
 	public static function clear_cdn() {
-		$u = wp_get_upload_dir();
-		Plakette_Log::rrmdir( trailingslashit( $u['basedir'] ) . self::DIR_NAME );
+		$u   = wp_get_upload_dir();
+		$dir = trailingslashit( $u['basedir'] ) . self::DIR_NAME;
+		// Empty the folder but keep it: a later download can write into it again at once.
+		foreach ( is_dir( $dir ) ? (array) scandir( $dir ) : array() as $item ) {
+			if ( '.' !== $item && '..' !== $item ) {
+				is_dir( $dir . '/' . $item ) ? Plakette_Log::rrmdir( $dir . '/' . $item ) : wp_delete_file( $dir . '/' . $item );
+			}
+		}
 		delete_option( self::STATE );
 		wp_clear_scheduled_hook( 'plakette_vendor_warm' );
 	}
@@ -910,10 +1077,19 @@ class Plakette_Performance {
 
 	private static function cdn_info_html() {
 		$files = self::registry();
-		if ( ! $files ) {
-			return '<p>' . esc_html__( 'Noch keine CDN-Dateien lokal gespeichert.', 'plakette' ) . '</p>';
+		$fails = array_filter( self::state()['fail'], fn( $f ) => is_array( $f ) && ! empty( $f['permanent'] ) && ! empty( $f['src'] ) );
+		$out   = '';
+		if ( $fails ) {
+			$out .= '<p>' . esc_html__( 'Geht nicht lokal (Plakette versucht es nicht automatisch erneut):', 'plakette' ) . '</p><ul>';
+			foreach ( $fails as $f ) {
+				$out .= '<li><code>' . esc_html( preg_replace( '#^https?://#', '', $f['src'] ) ) . '</code> – ' . esc_html( $f['why'] ) . '</li>';
+			}
+			$out .= '</ul>';
 		}
-		$out = '<ul>';
+		if ( ! $files ) {
+			return $out . '<p>' . esc_html__( 'Noch keine CDN-Dateien lokal gespeichert.', 'plakette' ) . '</p>';
+		}
+		$out .= '<ul>';
 		foreach ( $files as $f ) {
 			$out .= '<li><code>' . esc_html( preg_replace( '#^https?://#', '', $f['src'] ) ) . '</code> – '
 				. esc_html(

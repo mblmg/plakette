@@ -41,6 +41,36 @@ und Überschreibungen wie `kind`, `fix_label`, `fix_does`, `weight`.
 `kind => 'none'`: nur Hinweis ohne Knopf. Ein Fix bekommt `$req['value']` (input: String, form: Array key→Wert)
 bzw. `$req['items']` (`[ ['id'=>…,'value'=>…], … ]`).
 
+## Zusammenhängende Prüfungen
+Mehrere Mängel hängen oft an denselben Schaltern (z. B. „Dateien lokal ausliefern“ beim Cookie-Banner-Mangel und beim
+CDN-Mangel). `Plakette_Auditor::evaluate()` zeichnet auf, welche Module (`Plakette_Modules::on/get`) und Einstellungs-
+Bereiche (`Plakette_Settings::get` → `set:<bereich>`) `run()` liest, und speichert sie im Ergebnis als `reads`.
+Nach jedem Fix, Rückgängig und Speichern der Einstellungen ermittelt `Plakette_Auditor::touched( $undo_ops )`, welche
+Schalter sich geändert haben; `refresh_related()` prüft alle betroffenen Punkte neu (die Antwort meldet sie in `also`,
+die Oberfläche zeigt „Damit auch aktualisiert: …“). Hängt ein Ergebnis indirekt an einem Modul (über das ausgelieferte
+HTML), trägt die Prüfung es in `public $watch = array( 'modul', … )` ein.
+
+## Falschbefunde ausnehmen
+Item-Prüfungen können einzelne Einträge ausnehmen lassen: im Ergebnis `ignorable => true` und `ignored => $this->ignored_list()`,
+in `run()` die Einträge aus `$this->ignored()` überspringen (Option `plakette_ignored`, REST `/ignore`). Vorbild: `speed_images`.
+Items können `where` tragen (`[ label, url, edit ]` – Fundstellen, z. B. `Plakette_Image_Usage::places()`).
+
+## Bilder durch WebP ersetzen
+`Plakette_Image_Replace::to_webp( $id, $max, $undo )` (`modules/image-replace.php`): WebP-Fassung als neue Hauptdatei des Anhangs,
+Größen neu erzeugt, alle Adressen in `post_content` und Post-Meta umgeschrieben – serialisierte Daten über einen eigenen
+Leser (`serialized_replace()`, ohne `unserialize` fremder Klassen, Längen korrigiert), JSON mit `\/`. Undo-Ops `post_raw`,
+`postmeta_raw`. Die alten Dateien bleiben liegen. Test: `wp eval-file tests/image-webp.php`.
+
+## CDN-Dateien
+`Plakette_Performance::fetch_asset()` lädt bei CSS die Dateien hinter `url()` mit (gleiches CDN oder relativ; Schriften und Bilder,
+`localise_css()`), in `uploads/plakette-vendor/<key>-assets/`. Fehler mit `permanent => true` (4xx, falscher Typ, @import …)
+werden nicht automatisch wiederholt (erst nach 30 Tagen oder auf Knopfdruck); Netzwerkfehler stündlich.
+
+## Oberfläche
+Ansichten statt einer langen Seite: Mängel · Messungen · Statistik · Protokoll · Einstellungen (`ui.view`, Adresse `#messungen`,
+`#einstellungen-<bereich>`, `#plk-row-<id>`). Einstellungs-Bereiche können `badge => [ Text, on|off|warn ]` mitbringen.
+Vor jeder Änderung an der Oberfläche auf 390 px Breite prüfen (kein waagrechtes Scrollen, Knöpfe ≥ 40 px hoch).
+
 ## Kontext (`Plakette_Context`)
 `home()` (status, headers, cookies, time_ms, facts), `home_ok()`, `facts()`, `html()` (rohes HTML der Startseite),
 `all_html()` (Startseite + bis zu 4 Unterseiten: id ⇒ html), `cookies()` (Namen der Cookies, die ein Erstbesucher

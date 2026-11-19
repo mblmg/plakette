@@ -1205,6 +1205,46 @@ class Plakette_Image_Usage {
 	}
 
 	/**
+	 * Where a library image is used, for links in the report: published pages with their address, and templates,
+	 * global rows or blocks (no address of their own) with their edit link.
+	 *
+	 * @return array [ [ label, url ('' = no page of its own), edit ] ] up to $limit
+	 */
+	public static function places( $attachment_id, $file = '', $limit = 3 ) {
+		global $wpdb;
+		$file = '' !== $file ? $file : (string) get_attached_file( $attachment_id );
+		$key  = '' !== $file ? self::key( $file ) : '';
+		if ( strlen( $key ) < 4 ) {
+			return array();
+		}
+		$like = '%' . $wpdb->esc_like( $key ) . '%';
+		$ids  = array_merge(
+			(array) $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_status IN ('publish','private','future','draft') AND post_type NOT IN ('attachment','revision','customize_changeset','oembed_cache') AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY post_status = 'publish' DESC, post_modified DESC LIMIT 20", $like, '%wp-image-' . (int) $attachment_id . '%' ) ), // phpcs:ignore WordPress.DB
+			(array) $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT p.ID FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.post_status IN ('publish','private','future','draft') AND p.post_type NOT IN ('attachment','revision','customize_changeset','oembed_cache') AND ( pm.meta_value LIKE %s OR ( pm.meta_key = '_thumbnail_id' AND pm.meta_value = %s ) ) LIMIT 20", $like, (string) (int) $attachment_id ) ) // phpcs:ignore WordPress.DB
+		);
+		$out  = array();
+		foreach ( array_unique( array_map( 'intval', $ids ) ) as $id ) {
+			$post = get_post( $id );
+			if ( ! $post ) {
+				continue;
+			}
+			$type  = get_post_type_object( $post->post_type );
+			$title = '' !== trim( $post->post_title ) ? $post->post_title : sprintf( '#%d', $id );
+			$own   = 'publish' === $post->post_status && is_post_publicly_viewable( $post ) && ! post_password_required( $post );
+			$out[] = array(
+				'label' => $own || ! $type ? $title : $title . ' (' . $type->labels->singular_name . ')',
+				'url'   => $own ? (string) get_permalink( $post ) : '',
+				// Not get_edit_post_link(): audits also run from cron, without a user.
+				'edit'  => $type && $type->show_ui ? admin_url( 'post.php?post=' . $id . '&action=edit' ) : '',
+			);
+			if ( count( $out ) >= $limit ) {
+				break;
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * Public addresses of published pages that show this library image (post content or builder data).
 	 * Templates and global blocks have no address of their own and are not returned.
 	 *

@@ -133,6 +133,7 @@ class Plakette_Settings {
 
 	/** One value (with the field default) or the whole section when $key is null. */
 	public static function get( $section, $key = null ) {
+		Plakette_Modules::note_read( 'set:' . $section );
 		$all  = self::all();
 		$vals = isset( $all[ $section ] ) && is_array( $all[ $section ] ) ? $all[ $section ] : array();
 		if ( null === $key ) {
@@ -268,6 +269,7 @@ class Plakette_Settings {
 				'id'     => $id,
 				'title'  => $s['title'],
 				'desc'   => isset( $s['desc'] ) ? $s['desc'] : '',
+				'badge'  => isset( $s['badge'] ) ? $s['badge'] : null,
 				'fields' => $form['fields'],
 			);
 		}

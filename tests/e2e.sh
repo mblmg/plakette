@@ -30,6 +30,7 @@ step undoall 4-undo
 step state 5-state
 step features 7-features
 step audit 6-after-undo
+step related 8-related
 curl -s http://127.0.0.1:$PORT/wp-content/debug.log > "$OUT/debug.log"
 python3 - "$OUT" <<'PY'
 import json, sys, re
@@ -52,5 +53,6 @@ diff = {k: (st(a)[k], st(c)[k]) for k in st(a) if st(a)[k] != st(c)[k] and k not
 print("Abweichung vom Ursprung nach Undo:", diff or "keine")
 log = open(f"{out}/debug.log").read()
 ours = [l for l in log.splitlines() if "plakette" in l and re.search(r"PHP (Warning|Notice|Fatal|Deprecated|Parse)", l)]
+print("Zusammenhängende Prüfungen:", load("8-related").get("problems", ["TEST LIEF NICHT"]) or "ok")
 print("PHP-Meldungen aus dem Plugin:", len(ours)); [print("  ", l[:220]) for l in ours[:15]]
 PY

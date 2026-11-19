@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.5.0] - 2026-11-19
+
+### Neu
+- **Übersichtlichere Oberfläche:** statt einer langen Seite gibt es jetzt Ansichten – Mängel, Messungen, Statistik,
+  Protokoll und Einstellungen. Die Leiste bleibt beim Scrollen oben stehen und lässt sich auf dem Handy wischen.
+  Im Prüfbericht führt ein Knopf direkt zu den Einstellungen; jede Ansicht hat eine eigene Adresse
+  (`#einstellungen-consent` öffnet z. B. gleich den Cookie-Banner), der Zurück-Knopf des Browsers funktioniert.
+  Auf dem Handy steht die Plakette neben dem Ergebnis, die Bereichswerte zweispaltig, die Filter in einer wischbaren Zeile.
+  Das Protokoll zeigt zuerst die letzten 15 Einträge.
+- **Zusammenhängende Mängel werden gemeinsam aktualisiert:** Schaltet ein Knopf etwas ein, das auch andere Prüfpunkte
+  betrifft (z. B. „Dateien von öffentlichen CDNs lokal ausliefern“ beim Cookie-Banner-Mangel), prüft Plakette diese
+  Punkte sofort mit und meldet „Damit auch aktualisiert: …“. Gilt auch für Rückgängig und für gespeicherte Einstellungen
+  (z. B. Firmendaten → Impressum).
+- **Große Bilder: Falschbefunde ausnehmen und Fundstellen sehen.** Jedes bemängelte Bild hat einen Knopf „Ignorieren“
+  (zurücknehmbar unter „Ausgenommen“) und zeigt, auf welchen Seiten, Vorlagen oder Beaver-Builder-/Breakdance-Teilen es
+  verwendet wird – mit Links zum Ansehen und Bearbeiten.
+- **Einstellungen › Cookie-Banner zeigt den Status:** ob der Plakette-Banner aktiv ist, ein anderes Tool läuft
+  (z. B. CCM19, Borlabs, Complianz …), beide gleichzeitig (Warnung) oder gar keiner. Auch „Besucherstatistik“ zeigt,
+  ob sie zählt.
+- CCM19 wird als Cookie-Banner erkannt (Cloud und selbst gehostet, zurückgehaltene Skripte `text/x-ccm-loader`),
+  steht mit Anbieter und Absatz für die Datenschutzerklärung im Dienste-Katalog.
+
+### Behoben
+- **„Ausgewählte Bilder verkleinern“ tat bei PNG-Fotos nichts** („0 Bilder verkleinert“): Fotos mit transparenten
+  Stellen werden als PNG nicht kleiner. Plakette ersetzt sie jetzt durch eine WebP-Fassung (oft ein Zehntel der Größe)
+  und trägt die neue Adresse überall ein, wo das Bild verwendet wird – im Inhalt und in Page-Builder-Daten (Beaver
+  Builder, Elementor, Breakdance); der Builder-CSS-Cache wird neu erzeugt. Die alten Dateien bleiben liegen, alles ist
+  rückgängig machbar. Was nicht geht, nennt die Meldung jetzt mit Grund.
+- **CDN-Stylesheets mit Schriften** (z. B. `foundation-icons.css` von cdnjs): Plakette lädt die Schrift- und
+  Bilddateien hinter den `url()`-Verweisen mit herunter und liefert alles lokal aus. Dateien, die grundsätzlich nicht
+  lokal gehen (404, falscher Inhaltstyp, `@import` …), werden mit Grund vermerkt und nicht mehr stündlich neu versucht.
+- Mehrteilige Korrekturen (Bilder in Paketen) brechen nicht mehr beim ersten fehlgeschlagenen Paket ab.
+
 ## [1.4.0] - 2026-11-13
 
 ### Neu

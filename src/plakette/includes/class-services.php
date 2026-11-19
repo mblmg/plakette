@@ -264,6 +264,16 @@ class Plakette_Services {
 				'consent'  => false,
 				'aliases'  => array( 'Emoji', 's.w.org' ),
 			),
+			'ccm19' => array(
+				'name'     => 'CCM19 (Cookie-Banner)',
+				'category' => 'necessary',
+				'hosts'    => array( 'cloud.ccm19.de', 'ccm19.de' ),
+				'patterns' => array(),
+				'provider' => 'Papoo Software & Media GmbH, Auguststr. 4, 53229 Bonn',
+				'policy'   => 'Für die Verwaltung Ihrer Einwilligungen nutzen wir das Consent-Management-Tool CCM19. Beim Aufruf der Website wird dazu ein Skript von den Servern des Anbieters geladen; dabei wird Ihre IP-Adresse übertragen. Ihre Auswahl wird in Ihrem Browser gespeichert. Rechtsgrundlage ist Art. 6 Abs. 1 lit. c DSGVO in Verbindung mit Art. 7 Abs. 1 DSGVO (Nachweis der Einwilligung).',
+				'consent'  => false,
+				'aliases'  => array( 'CCM19' ),
+			),
 			'paypal' => array(
 				'name'     => 'PayPal',
 				'category' => 'necessary',
@@ -430,10 +440,10 @@ class Plakette_Services {
 	/** Does a consent tool hold this tag back until the visitor agrees? (ours and common plugins) */
 	public static function is_held_back( $tag ) {
 		$type = strtolower( Plakette_Html::attr( $tag, 'type' ) );
-		if ( 'text/plain' === $type || 'text/blocked' === $type || false !== strpos( $type, 'cookieconsent' ) ) {
+		if ( 'text/plain' === $type || 'text/blocked' === $type || false !== strpos( $type, 'cookieconsent' ) || 'text/x-ccm-loader' === $type ) {
 			return true;
 		}
-		foreach ( array( 'data-plakette-consent', 'data-cookieconsent', 'data-borlabs-cookie', 'data-category', 'data-cookiecategory', 'data-service', 'data-cmp-src', 'data-usercentrics', 'data-cookie-consent', 'data-cli-script-type', 'data-cmplz-src', 'consent-original-src-_', 'data-rcb-src' ) as $attr ) {
+		foreach ( array( 'data-plakette-consent', 'data-cookieconsent', 'data-borlabs-cookie', 'data-category', 'data-cookiecategory', 'data-service', 'data-cmp-src', 'data-usercentrics', 'data-cookie-consent', 'data-cli-script-type', 'data-cmplz-src', 'consent-original-src-_', 'data-rcb-src', 'data-ccm-loader-src', 'data-ccm-loader-group' ) as $attr ) {
 			if ( Plakette_Html::has_attr( $tag, $attr ) ) {
 				return true;
 			}
@@ -474,6 +484,9 @@ class Plakette_Services {
 			'web.cmp.usercentrics.eu'     => 'Usercentrics',
 			'cdn.cookielaw.org'           => 'OneTrust',
 			'cdn.consentmanager.net'      => 'consentmanager',
+			'ccm19.de/app.js'             => 'CCM19',
+			'/ccm19/public/app.js'        => 'CCM19',
+			'data-ccm-loader'             => 'CCM19',
 			'cdn-cookieyes.com'           => 'CookieYes',
 			'klaro.js'                    => 'Klaro',
 			'cdn.iubenda.com'             => 'iubenda',
@@ -541,7 +554,7 @@ class Plakette_Services {
 			array( 're' => '/^(pll_language|wp-wpml_current_language|_icl_current_language|wp-wpml_current_admin_language_.*|trp_language)$/', 'label' => __( 'Sprachwahl', 'plakette' ), 'service' => '', 'purpose' => __( 'Merkt die Sprache der Website', 'plakette' ), 'necessary' => 'depends', 'reason' => __( 'Notwendig, wenn der Besucher die Sprache selbst gewählt hat. Schon beim ersten Besuch gesetzt, ist es umstritten.', 'plakette' ), 'plugin' => 'Polylang, WPML, TranslatePress', 'measure' => __( 'Das Cookie erst nach einer Sprachwahl setzen: Polylang → in wp-config.php „define( \'PLL_COOKIE\', false );“; WPML → Sprachen › „Cookie für Sprachwahl“ abschalten (die Sprache steht ohnehin in der Adresse).', 'plakette' ) ),
 			array( 're' => '/^(cf_clearance|__cf_bm|__cflb|_cfuvid|cf_chl_.*)$/', 'label' => 'Cloudflare', 'service' => '', 'purpose' => __( 'Schutz vor Bots und Angriffen', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Sicherheit des Angebots – technisch notwendig.', 'plakette' ), 'plugin' => __( 'Cloudflare (beim Hoster bzw. DNS)', 'plakette' ), 'measure' => '' ),
 			array( 're' => '/^(__stripe_mid|__stripe_sid)$/', 'label' => 'Stripe', 'service' => 'stripe', 'purpose' => __( 'Betrugsschutz bei Zahlungen', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Für eine sichere Zahlung notwendig.', 'plakette' ), 'plugin' => 'WooCommerce Stripe, WP Simple Pay u. a.', 'measure' => '' ),
-			array( 're' => '/^(plakette_consent|borlabs-cookie|borlabs-cookie-.*|cmplz_.*|complianz_.*|CookieConsent|CookieConsentBulkSetting-.*|real_cookie_banner.*|rcb-.*|cookieyes-consent|cky-consent|cky-action|OptanonConsent|OptanonAlertBoxClosed|uc_settings|uc_user_interaction|ucData|euconsent-v2|moove_gdpr_popup|cookielawinfo-.*|viewed_cookie_policy|cookie_notice_accepted|gdpr\[.*|iubenda.*|_iub_cs-.*|cookie-agreed.*|klaro|cmapi_.*|__cmpcc.*)$/', 'label' => __( 'Cookie-Banner', 'plakette' ), 'service' => '', 'purpose' => __( 'Speichert die Einwilligung des Besuchers', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Der Nachweis der Einwilligung ist technisch notwendig.', 'plakette' ), 'plugin' => 'Plakette, Borlabs Cookie, Complianz, Real Cookie Banner, CookieYes, Cookiebot, Usercentrics …', 'measure' => '' ),
+			array( 're' => '/^(plakette_consent|borlabs-cookie|borlabs-cookie-.*|cmplz_.*|complianz_.*|CookieConsent|CookieConsentBulkSetting-.*|real_cookie_banner.*|rcb-.*|cookieyes-consent|cky-consent|cky-action|OptanonConsent|OptanonAlertBoxClosed|uc_settings|uc_user_interaction|ucData|euconsent-v2|moove_gdpr_popup|cookielawinfo-.*|viewed_cookie_policy|cookie_notice_accepted|gdpr\[.*|iubenda.*|_iub_cs-.*|cookie-agreed.*|klaro|cmapi_.*|__cmpcc.*|ccm_consent)$/', 'label' => __( 'Cookie-Banner', 'plakette' ), 'service' => '', 'purpose' => __( 'Speichert die Einwilligung des Besuchers', 'plakette' ), 'necessary' => 'yes', 'reason' => __( 'Der Nachweis der Einwilligung ist technisch notwendig.', 'plakette' ), 'plugin' => 'Plakette, Borlabs Cookie, Complianz, Real Cookie Banner, CookieYes, Cookiebot, Usercentrics …', 'measure' => '' ),
 		);
 		return (array) apply_filters( 'plakette_storage_kb', $kb );
 	}
@@ -594,7 +607,7 @@ class Plakette_Services {
 
 	/** Regex (JavaScript syntax) matching the cookies of consent tools – the browser probe removes them for a "first visit". */
 	public static function consent_cookie_pattern() {
-		return '^(plakette_consent|borlabs-cookie.*|cmplz_.*|complianz_.*|CookieConsent.*|real_cookie_banner.*|rcb-.*|cookieyes-consent|cky-.*|OptanonConsent|OptanonAlertBoxClosed|uc_.*|euconsent-v2|moove_gdpr_popup|cookielawinfo-.*|viewed_cookie_policy|cookie_notice_accepted|_iub_cs-.*|klaro|cmapi_.*|__cmpcc.*)$';
+		return '^(plakette_consent|borlabs-cookie.*|cmplz_.*|complianz_.*|CookieConsent.*|real_cookie_banner.*|rcb-.*|cookieyes-consent|cky-.*|OptanonConsent|OptanonAlertBoxClosed|uc_.*|euconsent-v2|moove_gdpr_popup|cookielawinfo-.*|viewed_cookie_policy|cookie_notice_accepted|_iub_cs-.*|klaro|cmapi_.*|__cmpcc.*|ccm_consent)$';
 	}
 
 	/**

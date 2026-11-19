@@ -28,6 +28,7 @@ class Plakette_Rest {
 		register_rest_route( self::NS, '/privacy-probe', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'privacy_probe' ) ) );
 		register_rest_route( self::NS, '/psi', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'psi' ) ) );
 		register_rest_route( self::NS, '/settings', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'save_settings' ) ) );
+		register_rest_route( self::NS, '/ignore', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'ignore' ) ) );
 		register_rest_route( self::NS, '/update-check', $base + array( 'methods' => 'POST', 'callback' => array( __CLASS__, 'update_check' ) ) );
 	}
 
@@ -40,8 +41,32 @@ class Plakette_Rest {
 		Plakette_Settings::save( $section, $values );
 		do_action( 'plakette_settings_saved', $section );
 		Plakette_Page_Cache::purge_all();
-		$state            = self::state();
+		// Checks that read this section (e.g. company data for the imprint) show the new state at once.
+		list( $report, $also ) = Plakette_Auditor::refresh_related( '', array( 'set:' . $section ) );
+		$state            = self::state( $report );
+		$state['also']    = self::also( $report, $also );
 		$state['message'] = __( 'Gespeichert.', 'plakette' );
+		return rest_ensure_response( $state );
+	}
+
+	/** Excludes one item of a check from the report (false positive) or takes it back in. */
+	public static function ignore( WP_REST_Request $request ) {
+		$id    = sanitize_key( (string) $request->get_param( 'check' ) );
+		$item  = sanitize_text_field( (string) $request->get_param( 'item' ) );
+		$label = sanitize_text_field( (string) $request->get_param( 'label' ) );
+		$check = Plakette_Auditor::get( $id );
+		if ( ! $check || '' === $item ) {
+			return new WP_Error( 'plakette_unknown', __( 'Unbekannte Prüfung.', 'plakette' ), array( 'status' => 400 ) );
+		}
+		$on = (bool) $request->get_param( 'on' );
+		Plakette_Check::set_ignored( $id, $item, $label, $on );
+		list( $report ) = Plakette_Auditor::refresh_related( $id, array() );
+		$state            = self::state( $report );
+		$state['message'] = $on
+			/* translators: %s: item */
+			? sprintf( __( '„%s“ wird nicht mehr als Mangel gezählt.', 'plakette' ), $label )
+			/* translators: %s: item */
+			: sprintf( __( '„%s“ wird wieder geprüft.', 'plakette' ), $label );
 		return rest_ensure_response( $state );
 	}
 
@@ -195,24 +220,51 @@ class Plakette_Rest {
 		}
 		Plakette_Page_Cache::purge_all();
 
-		$report = $request->get_param( 'refresh' ) === false ? get_option( Plakette_Auditor::OPTION ) : Plakette_Auditor::refresh( $id );
+		// Item fixes come in batches: remember what all batches touched, re-check once after the last one.
+		$key     = 'plakette_touched_' . $run_id;
+		$touched = array_values( array_unique( array_merge( (array) get_transient( $key ), Plakette_Auditor::touched( $undo ) ) ) );
+		if ( $request->get_param( 'refresh' ) === false ) {
+			set_transient( $key, $touched, HOUR_IN_SECONDS );
+			$report = get_option( Plakette_Auditor::OPTION );
+			$also   = array();
+		} else {
+			delete_transient( $key );
+			list( $report, $also ) = Plakette_Auditor::refresh_related( $id, $touched );
+		}
 		return rest_ensure_response(
 			array_merge(
 				self::state( $report ),
 				array(
 					'message' => $message,
 					'run'     => $run_id,
+					'also'    => self::also( $report, $also ),
 				)
 			)
 		);
+	}
+
+	/** Other checks a change updated: [ [ id, status, title ] ] for the message under the button. */
+	private static function also( $report, array $ids ) {
+		$out = array();
+		foreach ( (array) ( $report['checks'] ?? array() ) as $c ) {
+			if ( in_array( $c['id'], $ids, true ) ) {
+				$out[] = array(
+					'id'     => $c['id'],
+					'status' => $c['status'],
+					'title'  => in_array( $c['status'], array( 'pass', 'skip' ), true ) ? $c['title'] : $c['problem'],
+				);
+			}
+		}
+		return $out;
 	}
 
 	public static function undo( WP_REST_Request $request ) {
 		$run_id = sanitize_key( (string) $request->get_param( 'run' ) );
 		$result = Plakette_Log::undo_run( $run_id );
 		$check  = sanitize_key( (string) $request->get_param( 'check' ) );
-		$report = $check ? Plakette_Auditor::refresh( $check ) : get_option( Plakette_Auditor::OPTION );
-		$state  = self::state( $report );
+		list( $report, $also ) = Plakette_Auditor::refresh_related( $check, Plakette_Auditor::touched( Plakette_Log::$applied ) );
+		$state         = self::state( $report );
+		$state['also'] = self::also( $report, $also );
 		$state['message'] = is_wp_error( $result ) ? $result->get_error_message() : __( 'Rückgängig gemacht.', 'plakette' );
 		$state['ok']      = ! is_wp_error( $result );
 		return rest_ensure_response( $state );
