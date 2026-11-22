@@ -1354,6 +1354,18 @@
 	.plk-head:has(.plk-progress) .plk-head-text > * {
 		grid-column: 1 / -1;
 	}
+	/* Start and running audit have no kicker: title next to the plakette, text full width below. */
+	.plk-head.is-empty .plk-plakette,
+	.plk-head:has(.plk-progress) .plk-plakette {
+		grid-row: 1;
+	}
+	.plk-head.is-empty .plk-head-text > .plk-title,
+	.plk-head:has(.plk-progress) .plk-head-text > .plk-title {
+		grid-column: 2;
+		grid-row: 1;
+		align-self: center;
+		margin: 0;
+	}
 	.plk-lead {
 		font-size: 16px;
 		margin-top: 10px !important;

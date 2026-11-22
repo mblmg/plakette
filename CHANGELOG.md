@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.1] - 2026-11-22
+
+### Behoben
+- Auf dem Handy überlagerte die Plakette während der Prüfung die Überschrift „Prüfung läuft …“ (ebenso beim ersten
+  Aufruf ohne Prüfbericht). Die Überschrift steht jetzt neben der Plakette, der Text darunter.
+
 ## [1.5.0] - 2026-11-19
 
 ### Neu
