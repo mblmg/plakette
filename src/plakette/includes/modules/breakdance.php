@@ -26,6 +26,11 @@ class Plakette_Breakdance {
 		if ( self::seo_bridge_on() ) {
 			add_action( 'admin_enqueue_scripts', array( __CLASS__, 'seo_bridge_script' ), 20 );
 			add_filter( 'wpseo_schema_article', array( __CLASS__, 'schema_word_count' ), 10, 2 );
+			// Worthy (VG Wort) counts apply_filters( 'the_content', post_content ) – empty for Breakdance posts.
+			add_filter( 'the_content', array( __CLASS__, 'worthy_content' ), 1 );
+			add_action( 'added_post_meta', array( __CLASS__, 'worthy_queue' ), 10, 3 );
+			add_action( 'updated_post_meta', array( __CLASS__, 'worthy_queue' ), 10, 3 );
+			add_action( 'admin_init', array( __CLASS__, 'worthy_recount_all' ) );
 		}
 		// The old SEO-Helfer registers the same field slugs – registering them twice would clash.
 		if ( ! Plakette_Legacy::active( 'seo-helper' ) ) {
@@ -446,14 +451,18 @@ class Plakette_Breakdance {
 		if ( '' === $html ) {
 			return;
 		}
-		$yoast = wp_script_is( 'yoast-seo-post-edit', 'registered' ) || wp_script_is( 'yoast-seo-post-edit-classic', 'registered' ) || defined( 'WPSEO_VERSION' );
-		$rank  = defined( 'RANK_MATH_VERSION' );
-		if ( ! $yoast && ! $rank ) {
+		$yoast  = wp_script_is( 'yoast-seo-post-edit', 'registered' ) || wp_script_is( 'yoast-seo-post-edit-classic', 'registered' ) || defined( 'WPSEO_VERSION' );
+		$rank   = defined( 'RANK_MATH_VERSION' );
+		$worthy = self::worthy_active();
+		if ( ! $yoast && ! $rank && ! $worthy ) {
 			return;
 		}
 		wp_register_script( 'plakette-bd-seo', '', array( 'jquery', 'wp-hooks' ), PLAKETTE_VERSION, true );
 		wp_enqueue_script( 'plakette-bd-seo' );
-		wp_add_inline_script( 'plakette-bd-seo', 'window.plaketteBdContent=' . wp_json_encode( $html ) . ';' . self::bridge_js() );
+		wp_add_inline_script(
+			'plakette-bd-seo',
+			'window.plaketteBdContent=' . wp_json_encode( $html ) . ';window.plaketteBdText=' . wp_json_encode( $worthy ? esc_html( self::plain_text( $html ) ) : '' ) . ';' . self::bridge_js()
+		);
 	}
 
 	private static function bridge_js() {
@@ -475,6 +484,19 @@ class Plakette_Breakdance {
 		var refresh = function () { if (window.rankMathEditor && rankMathEditor.refresh) { rankMathEditor.refresh('content'); } };
 		if (window.jQuery) { jQuery(refresh); }
 	}
+	// Worthy (VG Wort): its character counter only sees the editor content – add the Breakdance text.
+	var text = window.plaketteBdText || '';
+	var worthy = function () {
+		var w = window.wp && wp.worthy;
+		if (!text || !w || typeof w.getCharacterCount !== 'function' || w.plaketteBd) { return; }
+		var count = w.getCharacterCount;
+		w.plaketteBd = true;
+		w.getCharacterCount = function (t) { return count.call(this, (t || '') + ' ' + text); };
+		if (typeof w.counter === 'function' && w.setup) { try { w.counter(); } catch (e) {} }
+	};
+	worthy();
+	document.addEventListener('DOMContentLoaded', worthy);
+	window.addEventListener('load', worthy);
 })();
 JS;
 	}
@@ -493,6 +515,103 @@ JS;
 			}
 		}
 		return $data;
+	}
+
+	/* ------------------------------------------------- Worthy (VG Wort) */
+
+	/** Is the VG Wort plugin Worthy (wp-worthy) active? */
+	public static function worthy_active() {
+		return class_exists( 'wp_worthy_post', false );
+	}
+
+	/**
+	 * Worthy reads the length (and the text it reports to VG Wort) through
+	 * wp_worthy_post::getContent() → apply_filters( 'the_content', post_content ). Inside that call the
+	 * Breakdance text takes the place of the empty post content. Other the_content calls stay untouched.
+	 */
+	public static function worthy_content( $content ) {
+		if ( ! self::worthy_active() ) {
+			return $content;
+		}
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- only way to know Worthy's post.
+		foreach ( debug_backtrace( DEBUG_BACKTRACE_PROVIDE_OBJECT, 8 ) as $frame ) {
+			if ( isset( $frame['function'], $frame['object'] ) && 'getContent' === $frame['function'] && $frame['object'] instanceof wp_worthy_post ) {
+				$id   = (int) $frame['object']->ID;
+				$html = $id ? self::html( $id ) : '';
+				return '' !== $html ? $html : $content;
+			}
+		}
+		return $content;
+	}
+
+	/** Visible text of HTML, counted the way Worthy counts (text content, whitespace collapsed). */
+	public static function plain_text( $html ) {
+		$text = html_entity_decode( wp_strip_all_tags( preg_replace( '/<[^>]*>/', ' ', (string) $html ) ), ENT_QUOTES, 'UTF-8' );
+		return trim( preg_replace( '/\s+/u', ' ', $text ) );
+	}
+
+	private static $worthy_queue = array();
+
+	/** Breakdance saved its tree (builder, not the WordPress editor): let Worthy count the post again at the end. */
+	public static function worthy_queue( $meta_id, $post_id, $key ) {
+		if ( '_breakdance_data' !== $key || ! self::worthy_active() ) {
+			return;
+		}
+		if ( ! self::$worthy_queue ) {
+			add_action( 'shutdown', array( __CLASS__, 'worthy_flush' ) );
+		}
+		self::$worthy_queue[ (int) $post_id ] = true;
+	}
+
+	public static function worthy_flush() {
+		foreach ( array_keys( self::$worthy_queue ) as $id ) {
+			self::forget( $id );
+			self::worthy_recount( $id );
+		}
+		self::$worthy_queue = array();
+	}
+
+	/** Lets Worthy store the length of one post (meta worthy_counter, reportable flag of its pixel). */
+	public static function worthy_recount( $post_id ) {
+		$post = get_post( $post_id );
+		if ( ! $post || ! self::worthy_active() || 'revision' === $post->post_type || ! is_post_type_viewable( $post->post_type ) ) {
+			return null;
+		}
+		try {
+			$w = new wp_worthy_post( $post );
+			$w->updateLength();
+			return (int) $w->getLength( false );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+	}
+
+	/** Once (in steps of 50 per admin page view): recount all Breakdance posts Worthy counted as empty before. */
+	public static function worthy_recount_all() {
+		if ( ! self::worthy_active() || wp_doing_ajax() ) {
+			return;
+		}
+		$done = (int) get_option( 'plakette_worthy_recount', 0 );
+		if ( $done < 0 ) {
+			return;
+		}
+		$ids = get_posts(
+			array(
+				'post_type'        => 'any',
+				'post_status'      => array( 'publish', 'future', 'draft', 'pending', 'private' ),
+				'meta_key'         => '_breakdance_data', // phpcs:ignore WordPress.DB.SlowDBQuery
+				'fields'           => 'ids',
+				'orderby'          => 'ID',
+				'order'            => 'ASC',
+				'posts_per_page'   => 50,
+				'offset'           => $done,
+				'suppress_filters' => true,
+			)
+		);
+		foreach ( $ids as $id ) {
+			self::worthy_recount( $id );
+		}
+		update_option( 'plakette_worthy_recount', count( $ids ) < 50 ? -1 : $done + count( $ids ), false );
 	}
 
 	/* ---------------------------------------------------------- chapters */
@@ -612,10 +731,10 @@ JS;
 			),
 			array(
 				'key'     => 'seo_bridge',
-				'label'   => __( 'Breakdance-Inhalte an Yoast SEO / Rank Math übergeben', 'plakette' ),
+				'label'   => __( 'Breakdance-Inhalte an Yoast SEO, Rank Math und Worthy übergeben', 'plakette' ),
 				'type'    => 'toggle',
 				'default' => true,
-				'help'    => __( 'Yoast und Rank Math lesen nur den WordPress-Editor und sehen bei Breakdance-Seiten „0 Wörter“. Plakette reicht ihnen beim Bearbeiten den Text aus Breakdance weiter (Überschriften, Absätze, Links, Bilder). Speichere eine Seite einmal im WordPress-Editor, damit Yoast die neue Bewertung übernimmt.', 'plakette' ),
+				'help'    => __( 'Yoast und Rank Math lesen nur den WordPress-Editor und sehen bei Breakdance-Seiten „0 Wörter“. Plakette reicht ihnen beim Bearbeiten den Text aus Breakdance weiter (Überschriften, Absätze, Links, Bilder). Speichere eine Seite einmal im WordPress-Editor, damit Yoast die neue Bewertung übernimmt. Das VG-Wort-Plugin Worthy zählt die Zeichen aus Breakdance (auch nach dem Speichern im Breakdance-Editor) und meldet diesen Text an VG Wort.', 'plakette' ),
 			),
 			array(
 				'key'     => 'author_bio',

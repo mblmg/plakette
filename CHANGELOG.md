@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.0] - 2026-11-25
+
+### Neu
+- **Breakdance-Artikel und das VG-Wort-Plugin Worthy:** Worthy sah bei Breakdance-Seiten bisher 0 Zeichen, weil es nur den
+  WordPress-Editor liest. Plakette reicht Worthy jetzt den Text aus Breakdance weiter – für die Zeichenzahl (ab 1.800 Zeichen
+  meldefähig) und für den Text, den Worthy an VG Wort meldet. Nach dem Speichern im Breakdance-Editor zählt Worthy neu;
+  bestehende Breakdance-Artikel werden einmalig im Hintergrund nachgezählt, ohne dass du sie neu speichern musst.
+  Auch der Zeichenzähler von Worthy im WordPress-Editor zählt den Breakdance-Text mit.
+  Schalter: Einstellungen › Breakdance › „Breakdance-Inhalte an Yoast SEO, Rank Math und Worthy übergeben“ (Standard an).
+
 ## [1.5.1] - 2026-11-22
 
 ### Behoben

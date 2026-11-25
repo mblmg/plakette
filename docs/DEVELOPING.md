@@ -134,6 +134,10 @@ fehlen“) prüft, dass es sie gibt und dass sie wirken – der Test muss „kei
   `::content_for( $post )` liefert es statt des (leeren) Beitragsinhalts – für Wortzählungen u. Ä. immer das nehmen.
   Dieselbe HTML geht im Beitragseditor an Yoast SEO (`registerModification('content')`) und Rank Math (`rank_math_content`)
   sowie als `wordCount` ins Yoast-Article-Schema (Einstellung „breakdance › seo_bridge“, Standard an).
+  Worthy (VG Wort, `wp-worthy`): `worthy_content()` ersetzt in `the_content` den leeren Inhalt durch die Breakdance-HTML – nur wenn
+  der Aufruf aus `wp_worthy_post::getContent()` kommt (Backtrace), also für Zeichenzahl und VG-Wort-Meldung. Nach Speichern von
+  `_breakdance_data` zählt `worthy_recount()` neu (bei `shutdown`), alte Beiträge einmalig über `admin_init` (Option `plakette_worthy_recount`,
+  50 je Aufruf, `-1` = fertig). Im Editor umhüllt `bridge_js()` `wp.worthy.getCharacterCount` mit dem Breakdance-Text.
   **Jede Prüfung, die Beitragsinhalte liest oder ändert, muss Breakdance mitdenken:** lesen mit `content_for()` (Text/HTML)
   bzw. `scan_source()` (roh, mit iframes, VG-Wort-Pixeln und Video-/Karten-Adressen), ändern mit `Plakette_Breakdance::visit()`
   / `::transform()` (Baum als Objekte, `{}` bleibt `{}`, speichert rückgängig machbar über `Plakette_Log::set_postmeta`).
