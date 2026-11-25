@@ -7,6 +7,9 @@ defined( 'ABSPATH' ) || exit;
 
 class Plakette_Crawler {
 
+	/** Read at most this much of a response (the status and headers always arrive complete). */
+	const MAX_BYTES = 3 * 1024 * 1024;
+
 	const UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36 Plakette/1.0';
 
 	/** @return array{ok:bool,error?:string,status?:int,time_ms?:int,headers?:array,body?:string,url?:string} */
@@ -15,13 +18,16 @@ class Plakette_Crawler {
 		$res   = wp_remote_request(
 			$url,
 			array(
-				'method'      => $method,
-				'timeout'     => 20,
-				'redirection' => 3,
-				'sslverify'   => false,
-				'user-agent'  => self::UA,
-				'headers'     => array( 'Accept' => 'text/html,application/xhtml+xml,*/*;q=0.8' ),
-				'cookies'     => array(),
+				'method'              => $method,
+				'timeout'             => 20,
+				'redirection'         => 3,
+				'sslverify'           => false,
+				'user-agent'          => self::UA,
+				'headers'             => array( 'Accept' => 'text/html,application/xhtml+xml,*/*;q=0.8' ),
+				'cookies'             => array(),
+				// Only HTML is analysed. A link can lead to a large download (video, archive, Anki deck …) –
+				// reading it completely ran out of memory (japanisch-lehrer.de, 12.8 MB file at 150 MB limit).
+				'limit_response_size' => self::MAX_BYTES,
 			)
 		);
 		$ms = (int) round( ( microtime( true ) - $start ) * 1000 );

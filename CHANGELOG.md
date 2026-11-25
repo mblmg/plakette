@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1] - 2026-11-25
+
+### Behoben
+- **Prüfung brach mit „kritischer Fehler“ ab**, wenn ein Link im Inhalt auf eine große Datei führte (z. B. eine
+  Weiterleitung auf einen 12,8-MB-Download): Plakette lud die Datei komplett in den Speicher. Beim Abrufen von Seiten
+  und Links liest Plakette jetzt höchstens 3 MB – für Status und HTML reicht das.
+
 ## [1.6.0] - 2026-11-25
 
 ### Neu
