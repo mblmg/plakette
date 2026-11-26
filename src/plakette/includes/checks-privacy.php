@@ -137,7 +137,7 @@ class Plakette_Check_Privacy_Third_Party extends Plakette_Privacy_Check {
 	public $weight    = 3;
 	public $title     = 'Keine fremden Server ohne Einwilligung';
 	public $problem   = 'Deine Seite verbindet Besucher mit fremden Servern';
-	public $explain   = 'Jede Datei von einem fremden Server (Skript, Schrift, Video, Bild) verrät diesem Server die IP-Adresse deiner Besucher. Nach DSGVO brauchst du dafür einen guten Grund oder die Einwilligung. Hier siehst du, wohin deine Seite Verbindungen aufbaut – und welcher Prüfpunkt dagegen hilft.';
+	public $explain   = 'Jede Datei von einem fremden Server (Skript, Schrift, Video, Bild) verrät diesem Server die IP-Adresse deiner Besucher. Nach DSGVO brauchst du dafür einen guten Grund oder die Einwilligung. Hier siehst du, ob und wohin deine Seite solche Verbindungen aufbaut – und welcher Prüfpunkt dagegen hilft.';
 	public $kind      = 'none';
 
 	/** What helps against a service (which other check). */
@@ -1165,7 +1165,7 @@ class Plakette_Check_Privacy_Gravatar extends Plakette_Privacy_Check {
 	public $weight    = 4;
 	public $title     = 'Profilbilder ohne Gravatar';
 	public $problem   = 'Profilbilder kommen von Gravatar';
-	public $explain   = 'WordPress lädt Profilbilder bei Kommentaren vom Dienst Gravatar (USA). Dabei gehen die IP-Adresse jedes Besuchers und ein Hashwert der E-Mail-Adresse jedes Kommentierenden an Automattic. Lokale Bilder mit Initialen sehen ordentlich aus und verraten nichts.';
+	public $explain   = 'Von Haus aus lädt WordPress Profilbilder bei Kommentaren vom Dienst Gravatar (USA). Dabei gehen die IP-Adresse jedes Besuchers und ein Hashwert der E-Mail-Adresse jedes Kommentierenden an Automattic. Lokale Bilder mit Initialen sehen ordentlich aus und verraten nichts.';
 	public $fix_label = 'Lokale Profilbilder verwenden';
 	public $fix_does  = 'Statt Gravatar zeigt WordPress ein Bild mit den Initialen der Person in einer festen Farbe. Die Bilder werden auf deinem Server erzeugt (Ordner uploads/plakette-avatars), es gibt keine Anfrage an Gravatar mehr.';
 	public $risk      = 'safe';
@@ -1208,7 +1208,7 @@ class Plakette_Check_Privacy_Comment_Ip extends Plakette_Privacy_Check {
 	public $weight    = 3;
 	public $title     = 'Kommentare speichern nur gekürzte IP-Adressen';
 	public $problem   = 'Kommentare speichern vollständige IP-Adressen';
-	public $explain   = 'WordPress merkt sich zu jedem Kommentar die komplette IP-Adresse. Das ist ein personenbezogenes Datum, das du für den Spamschutz nicht vollständig brauchst. Eine gekürzte Adresse (z. B. 203.0.113.0) reicht und schützt die Kommentierenden.';
+	public $explain   = 'Von Haus aus merkt sich WordPress zu jedem Kommentar die komplette IP-Adresse. Das ist ein personenbezogenes Datum, das du für den Spamschutz nicht vollständig brauchst. Eine gekürzte Adresse (z. B. 203.0.113.0) reicht und schützt die Kommentierenden.';
 	public $fix_label = 'IP-Adressen kürzen';
 	public $fix_does  = 'Neue Kommentare speichern nur noch die gekürzte IP-Adresse (IPv4: letzte Zahl wird 0, IPv6: nur die ersten drei Blöcke). Bereits gespeicherte Adressen werden ebenfalls gekürzt – bis zu 2.000 pro Klick, die neuesten zuerst.';
 	public $risk      = 'safe';

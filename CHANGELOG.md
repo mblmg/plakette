@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2] - 2026-11-26
+
+### Behoben
+- **Erklärungen bei bestandenen Prüfpunkten klangen nach einem Problem**, z. B. „Deine Website lädt Schriften von
+  Google-Servern“ beim grünen Punkt „Schriften kommen vom eigenen Server“. Alle Erklärtexte sind jetzt allgemein
+  formuliert („Viele Themes laden …“, „Von Haus aus …“) und stimmen bei „in Ordnung“ genauso wie bei einem Befund.
+
 ## [1.6.1] - 2026-11-25
 
 ### Behoben

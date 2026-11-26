@@ -293,7 +293,7 @@ class Plakette_Check_Image_Sitemap extends Plakette_Check {
 	public $weight    = 3;
 	public $title     = 'Alle Bilder in der Sitemap';
 	public $problem   = 'Bilder fehlen in der Sitemap';
-	public $explain   = 'Die Sitemap ist das Inhaltsverzeichnis deiner Website für Google. Dein SEO-Plugin nimmt dort auch Bilder auf – aber nur die aus dem normalen Beitragstext. Bilder aus Seitenbaukästen wie Breakdance fehlen, und damit findet die Google-Bildersuche sie schlechter.';
+	public $explain   = 'Die Sitemap ist das Inhaltsverzeichnis deiner Website für Google. SEO-Plugins nehmen dort meist auch Bilder auf – aber nur die aus dem normalen Beitragstext. Bilder aus Seitenbaukästen wie Breakdance fehlen dann, und damit findet die Google-Bildersuche sie schlechter.';
 	public $fix_label = 'Bilder ergänzen';
 	public $fix_does  = 'Ergänzt in der Sitemap deines SEO-Plugins zu jeder Seite die Bilder aus Breakdance-Layouts, das Beitragsbild und die Bilder im Inhalt.';
 
@@ -347,7 +347,7 @@ class Plakette_Check_Featured_Images extends Plakette_Check {
 	public $weight    = 4;
 	public $title     = 'Jede Seite hat ein Beitragsbild';
 	public $problem   = 'Seiten mit Bildern haben kein Beitragsbild';
-	public $explain   = 'Das Beitragsbild ist das Hauptbild einer Seite. Google, Facebook, WhatsApp und LinkedIn zeigen es in der Vorschau. Fehlt es, bleibt die Vorschau leer – obwohl auf der Seite passende Bilder sind.';
+	public $explain   = 'Das Beitragsbild ist das Hauptbild einer Seite. Google, Facebook, WhatsApp und LinkedIn zeigen es in der Vorschau. Fehlt es, bleibt die Vorschau leer – auch wenn auf der Seite passende Bilder sind.';
 	public $fix_label = 'Bilder als Beitragsbild setzen';
 	public $fix_does  = 'Setzt bei den ausgewählten Seiten das gezeigte Bild als Beitragsbild (das Vorschaubild aus Yoast oder das erste Bild der Seite). Am Inhalt ändert sich nichts.';
 	public $kind      = 'items';

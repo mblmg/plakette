@@ -508,7 +508,7 @@ class Plakette_Check_Content_H1 extends Plakette_Check {
 	public $weight    = 3;
 	public $title     = 'Nur eine Hauptüberschrift pro Seite';
 	public $problem   = 'Seiten mit mehreren Hauptüberschriften (H1)';
-	public $explain   = 'Die Hauptüberschrift (H1) sagt Google, worum es auf der Seite geht. Dein Theme setzt den Titel schon als H1. Weitere H1 im Text machen unklar, was das eigentliche Thema ist.';
+	public $explain   = 'Die Hauptüberschrift (H1) sagt Google, worum es auf der Seite geht. Meist setzt das Theme den Seitentitel schon als H1. Weitere H1 im Text machen unklar, was das eigentliche Thema ist.';
 	public $fix_label = 'In Zwischenüberschriften umwandeln';
 	public $fix_does  = 'Wandelt die H1-Überschriften im Text in H2 um. Text und Reihenfolge bleiben gleich, die Überschriften werden höchstens etwas kleiner dargestellt.';
 	public $kind      = 'items';
@@ -614,7 +614,7 @@ class Plakette_Check_Thin_Content extends Plakette_Check {
 	public $weight    = 2;
 	public $title     = 'Beiträge haben genug Inhalt';
 	public $problem   = 'Sehr kurze Beiträge';
-	public $explain   = 'Beiträge mit weniger als 300 Wörtern beantworten selten eine Frage vollständig. Google stuft viele solcher Seiten als „dünn“ ein, was die ganze Website schwächen kann. Am besten erweiterst du sie. Alternativ kannst du sie für Google ausblenden.';
+	public $explain   = 'Beiträge mit weniger als 300 Wörtern beantworten selten eine Frage vollständig. Google stuft viele solcher Seiten als „dünn“ ein, was die ganze Website schwächen kann. Solche Beiträge erweiterst du am besten. Alternativ kannst du sie für Google ausblenden.';
 	public $fix_label = 'Für Google ausblenden (noindex)';
 	public $fix_does  = 'Die ausgewählten Beiträge bleiben für Besucher sichtbar, Google nimmt sie aber nicht mehr in die Suche auf. Sobald du sie erweitert hast, kannst du das im Protokoll rückgängig machen.';
 	public $risk      = 'review';
@@ -665,7 +665,7 @@ class Plakette_Check_Broken_Links extends Plakette_Check {
 	public $weight    = 5;
 	public $title     = 'Interne Links funktionieren';
 	public $problem   = 'Links, die ins Leere führen';
-	public $explain   = 'Diese Links zeigen auf Seiten deiner Website, die es nicht (mehr) gibt. Besucher landen auf „Seite nicht gefunden“, und Google wertet kaputte Links als Zeichen für eine schlecht gepflegte Website.';
+	public $explain   = 'Kaputte interne Links zeigen auf Seiten deiner Website, die es nicht (mehr) gibt. Besucher landen dann auf „Seite nicht gefunden“, und Google wertet kaputte Links als Zeichen für eine schlecht gepflegte Website.';
 	public $fix_label = 'Links korrigieren';
 	public $fix_does  = 'Trägt die neue Adresse ein. Lässt du das Feld leer, wird der Link entfernt – der verlinkte Text bleibt stehen.';
 	public $risk      = 'review';

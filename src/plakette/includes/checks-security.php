@@ -1198,7 +1198,7 @@ class Plakette_Check_Sec_Mixed_Content extends Plakette_Security_Check {
 	public $weight    = 5;
 	public $title     = 'Alle Inhalte kommen verschlüsselt';
 	public $problem   = 'Unsichere http-Adressen auf einer HTTPS-Seite';
-	public $explain   = 'Deine Website läuft über HTTPS, bindet aber Bilder, Skripte oder Links noch mit „http://“ ein (gemischte Inhalte). Browser blockieren solche Dateien oder zeigen kein Schloss mehr an – Bilder fehlen dann, Funktionen brechen ab.';
+	public $explain   = 'Läuft eine Website über HTTPS, bindet aber Bilder, Skripte oder Links noch mit „http://“ ein (gemischte Inhalte), blockieren Browser solche Dateien oder zeigen kein Schloss mehr an – Bilder fehlen dann, Funktionen brechen ab.';
 	public $fix_label = 'Adressen auf HTTPS umstellen';
 	public $fix_does  = 'Plakette ersetzt beim Ausliefern jeder Seite „http://“ durch „https://“ – nur für Adressen deiner eigenen Domain. Deine Inhalte in der Datenbank bleiben unverändert.';
 
@@ -1238,7 +1238,7 @@ class Plakette_Check_Sec_User_Enum extends Plakette_Security_Check {
 	public $weight    = 5;
 	public $title     = 'Anmeldenamen bleiben geheim';
 	public $problem   = 'Fremde können Anmeldenamen auslesen';
-	public $explain   = 'Über Adressen wie „/?author=1“ oder die Schnittstelle „/wp-json/wp/v2/users“ verrät WordPress jedem Besucher die Benutzernamen der Autoren. Damit haben Angreifer die Hälfte der Zugangsdaten und müssen nur noch das Passwort raten.';
+	public $explain   = 'Von Haus aus verrät WordPress über Adressen wie „/?author=1“ oder die Schnittstelle „/wp-json/wp/v2/users“ jedem Besucher die Benutzernamen der Autoren. Damit haben Angreifer die Hälfte der Zugangsdaten und müssen nur noch das Passwort raten.';
 	public $fix_label = 'Benutzernamen verbergen';
 	public $fix_does  = 'Aufrufe von „/?author=…“ führen für Besucher zur Startseite, die Benutzerliste der Schnittstelle gibt es nur noch für angemeldete Benutzer (der Block-Editor braucht sie), die Autoren-Sitemap entfällt und eingebettete Beiträge nennen keinen Autor mehr.';
 	public $risk      = 'review';
@@ -1574,7 +1574,7 @@ class Plakette_Check_Sec_Directory_Listing extends Plakette_Security_Check {
 	public $weight    = 4;
 	public $title     = 'Ordnerinhalte sind nicht einsehbar';
 	public $problem   = 'Der Upload-Ordner zeigt eine Dateiliste';
-	public $explain   = 'Ruft man den Ordner wp-content/uploads im Browser auf, zeigt der Server eine Liste aller hochgeladenen Dateien – auch solcher, die du nirgends verlinkt hast (z. B. Rechnungen, Entwürfe oder Sicherungen von Plugins).';
+	public $explain   = 'Ist die Ordneransicht nicht abgeschaltet, zeigt der Server beim Aufruf von wp-content/uploads im Browser eine Liste aller hochgeladenen Dateien – auch solcher, die du nirgends verlinkt hast (z. B. Rechnungen, Entwürfe oder Sicherungen von Plugins).';
 	public $fix_label = 'Dateilisten verbergen';
 	public $fix_does  = 'Legt in den Upload-Ordner und seine Jahres- und Monatsordner eine leere Datei „index.php“. Der Server zeigt dann eine leere Seite statt der Liste. Deine Bilder bleiben wie gewohnt erreichbar.';
 
@@ -1672,7 +1672,7 @@ class Plakette_Check_Sec_Version_Leak extends Plakette_Security_Check {
 	public $weight    = 2;
 	public $title     = 'WordPress-Version wird nicht verraten';
 	public $problem   = 'Die WordPress-Version ist öffentlich sichtbar';
-	public $explain   = 'Im Quelltext jeder Seite steht, welche WordPress-Version läuft. Angreifer suchen damit automatisch nach Websites mit bekannten Lücken. Das Verstecken ersetzt keine Updates, macht dich aber für solche Suchläufe unsichtbarer.';
+	public $explain   = 'Von Haus aus schreibt WordPress in den Quelltext jeder Seite, welche Version läuft. Angreifer suchen damit automatisch nach Websites mit bekannten Lücken. Das Verstecken ersetzt keine Updates, macht dich aber für solche Suchläufe unsichtbarer.';
 	public $fix_label = 'Versionsangabe entfernen';
 	public $fix_does  = 'Entfernt die Angabe „generator“ aus dem Seitenkopf und den Feeds. Bei Apache-Servern sperrt Plakette zusätzlich den Abruf von readme.html, license.txt und wp-config-sample.php. Die Versionsnummern an CSS- und JavaScript-Dateien bleiben – sie sorgen dafür, dass Besucher nach Updates die neuen Dateien bekommen.';
 

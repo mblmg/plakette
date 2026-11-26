@@ -11,7 +11,7 @@ class Plakette_Check_Visibility extends Plakette_Check {
 	public $weight    = 10;
 	public $title     = 'Suchmaschinen dürfen deine Website besuchen';
 	public $problem   = 'Suchmaschinen werden ausgesperrt';
-	public $explain   = 'In den WordPress-Einstellungen ist das Häkchen „Suchmaschinen davon abhalten, diese Website zu indexieren“ gesetzt. Damit bittest du Google, deine Seite nicht anzuzeigen. Das ist nur während des Aufbaus sinnvoll.';
+	public $explain   = 'In den WordPress-Einstellungen gibt es das Häkchen „Suchmaschinen davon abhalten, diese Website zu indexieren“. Ist es gesetzt, bittest du Google, deine Seite nicht anzuzeigen. Das ist nur während des Aufbaus sinnvoll.';
 	public $fix_label = 'Suchmaschinen erlauben';
 	public $fix_does  = 'Entfernt das Häkchen unter Einstellungen › Lesen. Google kann deine Seiten danach in den nächsten Tagen aufnehmen.';
 
@@ -34,7 +34,7 @@ class Plakette_Check_Permalinks extends Plakette_Check {
 	public $weight    = 7;
 	public $title     = 'Sprechende Adressen (Permalinks)';
 	public $problem   = 'Adressen bestehen nur aus Zahlen';
-	public $explain   = 'Deine Seiten haben Adressen wie „?p=123“. Adressen mit Wörtern wie „/kuchen-rezept/“ verstehen Menschen und Google besser, und sie werden häufiger angeklickt.';
+	public $explain   = 'Ohne passende Einstellung haben WordPress-Seiten Adressen wie „?p=123“. Adressen mit Wörtern wie „/kuchen-rezept/“ verstehen Menschen und Google besser, und sie werden häufiger angeklickt.';
 	public $fix_label = 'Sprechende Adressen einschalten';
 	public $fix_does  = 'Stellt die Permalinks auf „Beitragsname“ um. Alte Links leitet WordPress automatisch weiter. Plakette testet danach eine Seite und nimmt die Änderung sofort zurück, falls der Server sie nicht unterstützt.';
 	public $risk      = 'review';
@@ -633,7 +633,7 @@ class Plakette_Check_Attachment_Pages extends Plakette_Check {
 	public $weight    = 3;
 	public $title     = 'Keine leeren Bild-Seiten';
 	public $problem   = 'Jedes hochgeladene Bild hat eine eigene, fast leere Seite';
-	public $explain   = 'WordPress legt für jedes Bild eine eigene Seite an, auf der nur das Bild zu sehen ist. Google sieht darin hunderte dünne Seiten, die deine guten Seiten schwächen.';
+	public $explain   = 'WordPress legt für jedes Bild eine eigene Seite an, auf der nur das Bild zu sehen ist. Sind diese Seiten erreichbar, sieht Google darin hunderte dünne Seiten, die deine guten Seiten schwächen.';
 	public $fix_label = 'Bild-Seiten abschalten';
 	public $fix_does  = 'Schaltet die Bild-Seiten ab. Wer eine alte Adresse aufruft, landet direkt beim Bild.';
 

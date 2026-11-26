@@ -991,7 +991,7 @@ class Plakette_Check_Legal_Odr extends Plakette_Check {
 	public $weight    = 3;
 	public $title     = 'Kein Link auf die abgeschaltete EU-Streitschlichtungsplattform';
 	public $problem   = 'Veralteter Link auf die EU-Streitschlichtung (OS-Plattform)';
-	public $explain   = 'Früher mussten Online-Händler auf die EU-Plattform zur Online-Streitbeilegung verlinken. Die Plattform wurde am 20. Juli 2025 abgeschaltet und die Pflicht abgeschafft (Verordnung (EU) 2024/3228). Der Link führt ins Leere und wirkt veraltet – ein Hinweis, dass die Rechtstexte länger nicht gepflegt wurden.';
+	public $explain   = 'Früher mussten Online-Händler auf die EU-Plattform zur Online-Streitbeilegung verlinken. Die Plattform wurde am 20. Juli 2025 abgeschaltet und die Pflicht abgeschafft (Verordnung (EU) 2024/3228). Ein solcher Link führt heute ins Leere und wirkt veraltet – ein Hinweis, dass die Rechtstexte länger nicht gepflegt wurden.';
 	public $fix_label = 'Hinweis entfernen';
 	public $fix_does  = 'Entfernt in den ausgewählten Seiten den Absatz mit dem Link zur OS-Plattform (bei Block-Inhalten) bzw. den Link selbst. Der Hinweis zur Verbraucherschlichtung bleibt erhalten.';
 	public $risk      = 'review';
@@ -1350,7 +1350,7 @@ class Plakette_Check_A11y_Zoom extends Plakette_Check {
 	public $weight    = 6;
 	public $title     = 'Besucher können die Seite vergrößern';
 	public $problem   = 'Vergrößern (Zoomen) ist auf dem Handy gesperrt';
-	public $explain   = 'Dein Theme verbietet Smartphones das Vergrößern mit zwei Fingern (user-scalable=no bzw. maximum-scale=1). Menschen mit Sehschwäche können kleine Schrift dann nicht lesen. Die Barrierefreiheitsregeln (WCAG 1.4.4) verlangen, dass Text auf 200 % vergrößert werden kann.';
+	public $explain   = 'Manche Themes verbieten Smartphones das Vergrößern mit zwei Fingern (user-scalable=no bzw. maximum-scale=1). Menschen mit Sehschwäche können kleine Schrift dann nicht lesen. Die Barrierefreiheitsregeln (WCAG 1.4.4) verlangen, dass Text auf 200 % vergrößert werden kann.';
 	public $fix_label = 'Zoomen erlauben';
 	public $fix_does  = 'Ändert die Viewport-Angabe beim Ausliefern auf „width=device-width, initial-scale=1“. Das Layout bleibt gleich, nur die Zoom-Sperre fällt weg.';
 

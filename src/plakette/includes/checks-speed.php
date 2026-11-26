@@ -886,7 +886,7 @@ class Plakette_Check_Emoji extends Plakette_Check_Bloat {
 	public $weight    = 2;
 	public $title     = 'Kein überflüssiges Emoji-Skript';
 	public $problem   = 'Ein Emoji-Skript wird auf jeder Seite geladen';
-	public $explain   = 'WordPress lädt auf jeder Seite ein Skript, das Emojis für sehr alte Browser nachrüstet. Heutige Browser zeigen Emojis selbst an – das Skript kostet nur Zeit.';
+	public $explain   = 'Von Haus aus lädt WordPress auf jeder Seite ein Skript, das Emojis für sehr alte Browser nachrüstet. Heutige Browser zeigen Emojis selbst an – das Skript kostet nur Zeit.';
 	public $fix_label = 'Emoji-Skript abschalten';
 	public $fix_does  = 'Entfernt das Skript und die zugehörigen Styles aus deinen Seiten. Emojis werden weiterhin angezeigt – vom Browser selbst.';
 	protected $module = 'no_emoji';
@@ -911,7 +911,7 @@ class Plakette_Check_Dashicons extends Plakette_Check_Bloat {
 	public $weight    = 2;
 	public $title     = 'Keine Admin-Symbole für Besucher';
 	public $problem   = 'Die Symbolschrift des Admin-Bereichs wird an Besucher geschickt';
-	public $explain   = 'Die „Dashicons“ sind die Symbole des WordPress-Admin-Bereichs. Normale Besucher brauchen sie nicht – trotzdem lädt dein Theme oder ein Plugin sie (rund 60 KB).';
+	public $explain   = 'Die „Dashicons“ sind die Symbole des WordPress-Admin-Bereichs. Normale Besucher brauchen sie nicht – manche Themes und Plugins laden sie trotzdem auf jeder Seite (rund 60 KB).';
 	public $fix_label = 'Dashicons für Besucher abschalten';
 	public $fix_does  = 'Lädt die Symbolschrift nur noch für angemeldete Nutzer. Braucht ein Plugin sie ausdrücklich, bleibt sie für dieses Plugin erhalten.';
 	protected $module = 'no_dashicons';
@@ -925,7 +925,7 @@ class Plakette_Check_Google_Fonts extends Plakette_Speed_Check {
 	public $weight    = 5;
 	public $title     = 'Schriften kommen vom eigenen Server';
 	public $problem   = 'Schriften werden bei Google geladen';
-	public $explain   = 'Deine Website lädt Schriften von Google-Servern. Das kostet eine zusätzliche Verbindung zu einem fremden Server und überträgt dabei die IP-Adresse deiner Besucher an Google – laut Landgericht München (2022) ein Datenschutzverstoß.';
+	public $explain   = 'Viele Themes und Page Builder laden Schriften von Google-Servern. Das kostet eine zusätzliche Verbindung zu einem fremden Server und überträgt dabei die IP-Adresse jedes Besuchers an Google – laut Landgericht München (2022) ein Datenschutzverstoß. Liegen die Schriften auf deinem eigenen Server, fällt beides weg.';
 	public $fix_label = 'Schriften lokal speichern';
 	public $fix_does  = 'Plakette lädt die Schriften einmal herunter (nur westeuropäische Zeichen, damit es klein bleibt), legt sie in deinen Upload-Ordner und bindet sie von dort ein – auch die Schriften aus Breakdance und Oxygen. Neue Schriften übernimmt Plakette automatisch. Das Aussehen deiner Seite bleibt gleich.';
 
